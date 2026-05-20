@@ -220,8 +220,7 @@ None
 ## Phase 8: Documentation
 
 **Prompt:**
-yes of course, you suppose to run it
-(User asked to run the document-phase skill after confirming all phases were complete)
+Review all the md files and make sure everything is documented. Also create a run.md file with instructions on how to run and build the project.
 
 **Generated:**
 - prompts.md
