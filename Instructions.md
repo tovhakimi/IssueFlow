@@ -12,3 +12,6 @@
 - Phase 6 (Scheduler): EscalationService with @Cron(EVERY_HOUR) — escalates overdue ticket priority LOW→MEDIUM→HIGH→CRITICAL, sets isOverdue=true at CRITICAL
 - Phase 7 (Tests): 17 unit tests (status lifecycle, optimistic lock, auto-assign, mentions, cron) + 6 e2e tests (auth happy path with in-memory mock), all passing
 - Phase 8 (Documentation): generated prompts.md, updated Instructions.md, created run.md
+
+## Fixes
+- AUTO_ASSIGN audit log: tickets.service.ts was merging auto-assignment into the CREATE log entry. Fixed to write two separate entries — actor=USER/action=CREATE and actor=SYSTEM/action=AUTO_ASSIGN. Tests updated to assert both.

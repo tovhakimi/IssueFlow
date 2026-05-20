@@ -229,3 +229,22 @@ Review all the md files and make sure everything is documented. Also create a ru
 
 **Manual Changes:**
 None
+
+---
+
+## Fixes
+
+### AUTO_ASSIGN Audit Log
+
+**Prompt:**
+Each auto-assignment is recorded in the Audit Log with actor = SYSTEM, action = AUTO_ASSIGN. Did you do it?
+
+**What was wrong:**
+Auto-assignment was merging into the CREATE log entry — setting actor=SYSTEM on it instead of writing a separate entry. The human who created the ticket was being erased from the audit trail.
+
+**Fix:**
+Always write actor=USER/action=CREATE, then write a second actor=SYSTEM/action=AUTO_ASSIGN entry only when auto-assignment fires.
+
+**Files changed:**
+- src/tickets/tickets.service.ts
+- src/tickets/tickets.service.spec.ts
