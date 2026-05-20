@@ -132,25 +132,40 @@ describe('TicketsService', () => {
       ticketRepo.save.mockResolvedValue(mockTicket({ assigneeId: 5 }));
       auditLog.log.mockResolvedValue(undefined);
 
-      const result = await service.create(
-        { title: 'T', projectId: 1 } as any,
-        1,
-      );
+      const result = await service.create({ title: 'T', projectId: 1 } as any, 1);
       expect(result.assigneeId).toBe(5);
     });
 
-    it('uses provided assigneeId when given', async () => {
+    it('logs AUTO_ASSIGN with actor=SYSTEM when auto-assigning', async () => {
+      (ticketRepo.manager.query as jest.Mock).mockResolvedValue([{ id: 5, createdAt: new Date() }]);
+      ticketRepo.create.mockImplementation(dto => ({ ...dto } as any));
+      ticketRepo.save.mockResolvedValue(mockTicket({ assigneeId: 5 }));
+      auditLog.log.mockResolvedValue(undefined);
+
+      await service.create({ title: 'T', projectId: 1 } as any, 1);
+
+      // Two audit entries: CREATE (USER) + AUTO_ASSIGN (SYSTEM)
+      expect(auditLog.log).toHaveBeenCalledTimes(2);
+      expect(auditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ actor: 'USER', action: 'CREATE' }),
+      );
+      expect(auditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ actor: 'SYSTEM', action: 'AUTO_ASSIGN' }),
+      );
+    });
+
+    it('logs only CREATE when assigneeId is manually provided (no AUTO_ASSIGN entry)', async () => {
       ticketRepo.create.mockImplementation(dto => ({ ...dto } as any));
       ticketRepo.save.mockResolvedValue(mockTicket({ assigneeId: 99 }));
       auditLog.log.mockResolvedValue(undefined);
 
-      const result = await service.create(
-        { title: 'T', projectId: 1, assigneeId: 99 } as any,
-        1,
-      );
-      expect(result.assigneeId).toBe(99);
-      // manager.query should NOT be called for auto-assign
+      await service.create({ title: 'T', projectId: 1, assigneeId: 99 } as any, 1);
+
       expect(ticketRepo.manager.query).not.toHaveBeenCalled();
+      expect(auditLog.log).toHaveBeenCalledTimes(1);
+      expect(auditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ actor: 'USER', action: 'CREATE' }),
+      );
     });
   });
 

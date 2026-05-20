@@ -43,23 +43,34 @@ export class TicketsService {
 
   async create(dto: CreateTicketDto, userId: number): Promise<Ticket> {
     let assigneeId = dto.assigneeId;
-    let actor = AuditActor.USER;
+    const autoAssigned = !assigneeId;
 
-    if (!assigneeId) {
+    if (autoAssigned) {
       assigneeId = await this.autoAssign(dto.projectId);
-      actor = AuditActor.SYSTEM;
     }
 
     const ticket = this.ticketRepo.create({ ...dto, assigneeId });
     const saved = await this.ticketRepo.save(ticket);
 
+    // Always log the ticket creation as a USER action
     await this.auditLog.log({
-      actor,
+      actor: AuditActor.USER,
       action: 'CREATE',
       entityType: 'Ticket',
       entityId: saved.id,
-      performedBy: actor === AuditActor.USER ? userId : undefined,
+      performedBy: userId,
     });
+
+    // Log a separate SYSTEM entry specifically for the auto-assignment
+    if (autoAssigned) {
+      await this.auditLog.log({
+        actor: AuditActor.SYSTEM,
+        action: 'AUTO_ASSIGN',
+        entityType: 'Ticket',
+        entityId: saved.id,
+        changes: { assigneeId },
+      });
+    }
 
     return saved;
   }
