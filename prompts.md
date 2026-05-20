@@ -42,7 +42,7 @@ Install missing packages (@nestjs/jwt, @nestjs/passport, @nestjs/schedule, passp
 passport-jwt, passport-local, bcrypt). Then implement Phase 2:
 
 - TypeORM config in app.module.ts connecting to postgres (host/user/pass/db = issueflow)
-- User entity: id, username, email, fullName, role (ADMIN/DEVELOPER/VIEWER), passwordHash, createdAt
+- User entity: id, username, email, fullName, role (ADMIN/DEVELOPER), passwordHash, createdAt
 - UsersModule: CRUD, POST /users/update/:userId (not PATCH), all returns 200
 - AuthModule: JWT (1h expiry, secret from env), bcrypt hashing, login/logout/me
 - Global JwtAuthGuard via APP_GUARD; @Public() decorator to opt out
@@ -237,7 +237,7 @@ None
 ### AUTO_ASSIGN Audit Log
 
 **Prompt:**
-Each auto-assignment is recorded in the Audit Log with actor = SYSTEM, action = AUTO_ASSIGN. Did you do it?
+Each auto-assignment is recorded in the Audit Log with actor = SYSTEM, action = AUTO_ASSIGN. Change to it respectively.
 
 **What was wrong:**
 Auto-assignment was merging into the CREATE log entry — setting actor=SYSTEM on it instead of writing a separate entry. The human who created the ticket was being erased from the audit trail.
@@ -248,3 +248,22 @@ Always write actor=USER/action=CREATE, then write a second actor=SYSTEM/action=A
 **Files changed:**
 - src/tickets/tickets.service.ts
 - src/tickets/tickets.service.spec.ts
+
+---
+
+### TicketType Enum: TASK → TECHNICAL
+
+**Prompt:**
+Look at @src/tickets/ticket.entity.ts, change the TicketType to -> BUG, FEATURE, TECHNICAL respectively. Then change the entire codebase references to 'TASK', running unit tests after each change and e2e tests at the end.
+
+**What changed:**
+Renamed `TicketType.TASK` to `TicketType.TECHNICAL` across the entire codebase.
+
+**Files changed:**
+- src/tickets/ticket.entity.ts (enum value + column default)
+- src/tickets/tickets.service.spec.ts (mock data)
+- src/tickets/tickets.performance.spec.ts (mock data + CSV string)
+
+**Tests:**
+- Unit tests: 27/27 passed (6 suites) — ran after each file change to catch breakage incrementally
+- E2e tests: 24/24 passed (2 suites) — ran at the end to verify full application

@@ -21,7 +21,7 @@ const makeTicket = (id: number, overrides: Partial<Ticket> = {}): Ticket => ({
   description: 'desc',
   status: TicketStatus.IN_PROGRESS,
   priority: TicketPriority.LOW,
-  type: TicketType.TASK,
+  type: TicketType.TECHNICAL,
   projectId: 1,
   assigneeId: 1,
   dueDate: new Date(Date.now() - 1000), // in the past → overdue
@@ -133,7 +133,7 @@ describe('TicketsService — performance', () => {
     const header = 'title,description,status,priority,type,assigneeId\n';
     const rows = Array.from(
       { length: 50 },
-      (_, i) => `Ticket ${i},desc,TODO,MEDIUM,TASK,1`,
+      (_, i) => `Ticket ${i},desc,TODO,MEDIUM,TECHNICAL,1`,
     ).join('\n');
     const csvBuffer = Buffer.from(header + rows);
 

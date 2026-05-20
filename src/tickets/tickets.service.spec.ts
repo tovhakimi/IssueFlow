@@ -14,7 +14,7 @@ const mockTicket = (overrides = {}): Ticket => ({
   description: 'desc',
   status: TicketStatus.TODO,
   priority: TicketPriority.MEDIUM,
-  type: TicketType.TASK,
+  type: TicketType.TECHNICAL,
   projectId: 1,
   assigneeId: 1,
   dueDate: null,

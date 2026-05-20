@@ -25,7 +25,7 @@ export enum TicketPriority {
 export enum TicketType {
   BUG = 'BUG',
   FEATURE = 'FEATURE',
-  TASK = 'TASK',
+  TECHNICAL = 'TECHNICAL',
 }
 
 @Entity('tickets')
@@ -45,7 +45,7 @@ export class Ticket {
   @Column({ type: 'enum', enum: TicketPriority, default: TicketPriority.MEDIUM })
   priority: TicketPriority;
 
-  @Column({ type: 'enum', enum: TicketType, default: TicketType.TASK })
+  @Column({ type: 'enum', enum: TicketType, default: TicketType.TECHNICAL })
   type: TicketType;
 
   @Column()
