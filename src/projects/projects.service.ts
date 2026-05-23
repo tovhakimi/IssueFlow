@@ -93,13 +93,14 @@ export class ProjectsService {
     // Raw query: count non-DONE tickets per DEVELOPER in this project
     const rows = await this.repo.manager.query(
       `SELECT u.id AS "userId", u.username, u."fullName",
-              COUNT(t.id) FILTER (WHERE t."projectId" = $1 AND t.status != 'DONE' AND t."deletedAt" IS NULL) AS "activeTickets"
+              COUNT(t.id) FILTER (WHERE t."projectId" = $1 AND t.status != 'DONE' AND t."deletedAt" IS NULL) AS "openTicketCount"
        FROM users u
+       LEFT JOIN tickets t ON t."assigneeId" = u.id
        WHERE u.role = 'DEVELOPER'
        GROUP BY u.id, u.username, u."fullName"
-       ORDER BY u."createdAt" ASC`,
+       ORDER BY "openTicketCount" ASC`,
       [projectId],
     );
-    return rows.map(r => ({ ...r, activeTickets: parseInt(r.activeTickets, 10) }));
+    return rows.map(r => ({ ...r, openTicketCount: parseInt(r.openTicketCount, 10) }));
   }
 }

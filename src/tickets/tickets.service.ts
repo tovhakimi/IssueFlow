@@ -62,7 +62,7 @@ export class TicketsService {
     });
 
     // Log a separate SYSTEM entry specifically for the auto-assignment
-    if (autoAssigned) {
+    if (autoAssigned && assigneeId) {
       await this.auditLog.log({
         actor: AuditActor.SYSTEM,
         action: 'AUTO_ASSIGN',

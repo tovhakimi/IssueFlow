@@ -1,10 +1,7 @@
 ## Phase 0: Planning & Architecture
 
 **Prompt:**
-Read the attached assessment PDF carefully. Before writing any code, I want to plan the architecture
-with you. Identify the domain modules, their dependencies, the data model, and any tricky
-business rules we need to handle carefully. Produce an architecture summary: modules, entities,
-key API contracts, and a phase breakdown for implementation.
+Read the attached assessment PDF carefully. Before writing any code, I want to plan the architecture with you. Identify the domain modules, their dependencies, the data model, and any tricky business rules we need to handle carefully. Produce an architecture summary: modules, entities, key API contracts, and a phase breakdown for implementation.
 
 **Key Decisions Made:**
 
@@ -556,4 +553,51 @@ to include `mentionedUsers`.
 
 **Tests:**
 - Comments suite: 5/5 passing
+- Build: clean (npx tsc --noEmit — no errors)
+
+---
+
+## Fix 5: Auto-Assignment & Workload — 4 Bugs
+
+**Problem identified:**
+Verification of the auto-assignment feature (section 3.8) and workload endpoint found four bugs
+that would cause runtime failures or incorrect API responses:
+
+1. **Workload query missing LEFT JOIN**: `getWorkload()` in `projects.service.ts` had no
+   `LEFT JOIN tickets t ON t."assigneeId" = u.id`, so the `COUNT(t.id) FILTER (...)` had no
+   ticket rows to count — the query would crash or return zero for everyone.
+
+2. **Response field name mismatch**: Workload response used `activeTickets` instead of
+   `openTicketCount`, violating the API contract (spec says `openTicketCount`).
+
+3. **Workload sort order wrong**: Results were sorted by `u."createdAt" ASC` (user creation date)
+   instead of `"openTicketCount" ASC` (least loaded first), which is what callers expect for
+   load-balanced assignment visibility.
+
+4. **AUTO_ASSIGN audit log fires with no assignee**: In `tickets.service.ts`, the guard was
+   `if (autoAssigned)` — when no DEVELOPER exists in the project, `autoAssign()` returns
+   `undefined` but the audit log still recorded a bogus `AUTO_ASSIGN` entry with
+   `changes: { assigneeId: undefined }`.
+
+**Prompt:**
+Fix 4 bugs in auto-assignment and workload:
+1. Add `LEFT JOIN tickets t ON t."assigneeId" = u.id` to the workload query
+2. Rename response field `activeTickets` → `openTicketCount`
+3. Change workload ORDER BY from `u."createdAt" ASC` to `"openTicketCount" ASC`
+4. Change auto-assign audit guard from `if (autoAssigned)` to `if (autoAssigned && assigneeId)`
+
+**Fix applied:**
+1. Added `LEFT JOIN tickets t ON t."assigneeId" = u.id` to the raw SQL in
+   `projects.service.ts:getWorkload()`.
+2. Changed the SELECT alias and response mapping from `activeTickets` to `openTicketCount`.
+3. Changed `ORDER BY` from `u."createdAt" ASC` to `"openTicketCount" ASC`.
+4. Changed the audit log guard in `tickets.service.ts:create()` from `if (autoAssigned)` to
+   `if (autoAssigned && assigneeId)` — no log entry when auto-assignment finds no developer.
+
+**Files changed:**
+- src/projects/projects.service.ts (workload query: added LEFT JOIN, fixed field name, fixed sort)
+- src/tickets/tickets.service.ts (auto-assign audit guard: added `&& assigneeId` check)
+
+**Tests:**
+- All 31 tests passing (25 unit + 6 e2e)
 - Build: clean (npx tsc --noEmit — no errors)
