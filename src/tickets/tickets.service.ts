@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Ticket, TicketStatus, TicketPriority } from './ticket.entity';
 import { TicketDependency } from './ticket-dependency.entity';
 import { Attachment } from './attachment.entity';
@@ -197,18 +197,18 @@ export class TicketsService {
 
   async addDependency(ticketId: number, dto: CreateDependencyDto): Promise<TicketDependency> {
     const ticket = await this.findOne(ticketId);
-    const blocker = await this.findOne(dto.blockedById);
+    const blocker = await this.findOne(dto.blockedBy);
 
     if (ticket.projectId !== blocker.projectId) {
       throw new BadRequestException('Both tickets must belong to the same project');
     }
 
     const existing = await this.depRepo.findOne({
-      where: { ticketId, blockedById: dto.blockedById },
+      where: { ticketId, blockedById: dto.blockedBy },
     });
     if (existing) throw new ConflictException('Dependency already exists');
 
-    const dep = this.depRepo.create({ ticketId, blockedById: dto.blockedById });
+    const dep = this.depRepo.create({ ticketId, blockedById: dto.blockedBy });
     return this.depRepo.save(dep);
   }
 
@@ -219,8 +219,11 @@ export class TicketsService {
     return { message: 'Dependency removed' };
   }
 
-  async getDependencies(ticketId: number): Promise<TicketDependency[]> {
-    return this.depRepo.find({ where: { ticketId } });
+  async getDependencies(ticketId: number): Promise<Ticket[]> {
+    const deps = await this.depRepo.find({ where: { ticketId } });
+    if (deps.length === 0) return [];
+    const blockerIds = deps.map(d => d.blockedById);
+    return this.ticketRepo.findBy({ id: In(blockerIds) });
   }
 
   private async assertNoBlockers(ticketId: number): Promise<void> {
@@ -228,7 +231,7 @@ export class TicketsService {
     if (blockers.length === 0) return;
 
     const blockerIds = blockers.map(b => b.blockedById);
-    const blockerTickets = await this.ticketRepo.findByIds(blockerIds);
+    const blockerTickets = await this.ticketRepo.findBy({ id: In(blockerIds) });
     const unresolved = blockerTickets.filter(t => t.status !== TicketStatus.DONE);
 
     if (unresolved.length > 0) {

@@ -15,3 +15,5 @@
 
 ## Fixes
 - AUTO_ASSIGN audit log: tickets.service.ts was merging auto-assignment into the CREATE log entry. Fixed to write two separate entries — actor=USER/action=CREATE and actor=SYSTEM/action=AUTO_ASSIGN. Tests updated to assert both.
+- TicketType TASK → TECHNICAL: renamed enum value across entity, service spec, and performance spec to match API contract.
+- Dependency API contract: fixed 3 violations — DTO field `blockedById` → `blockedBy`, DELETE param `:blockedById` → `:blockerId`, GET now returns Ticket[] instead of TicketDependency[]. Replaced deprecated findByIds() with findBy({ id: In([...]) }).

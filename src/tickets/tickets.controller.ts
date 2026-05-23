@@ -125,13 +125,13 @@ export class TicketsController {
     return this.ticketsService.addDependency(id, dto);
   }
 
-  @Delete(':ticketId/dependencies/:blockedById')
+  @Delete(':ticketId/dependencies/:blockerId')
   @HttpCode(200)
   removeDependency(
     @Param('ticketId', ParseIntPipe) ticketId: number,
-    @Param('blockedById', ParseIntPipe) blockedById: number,
+    @Param('blockerId', ParseIntPipe) blockerId: number,
   ) {
-    return this.ticketsService.removeDependency(ticketId, blockedById);
+    return this.ticketsService.removeDependency(ticketId, blockerId);
   }
 
   // ─── Attachments ─────────────────────────────────────────────────────────────
