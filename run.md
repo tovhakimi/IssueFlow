@@ -48,3 +48,10 @@
 | `DB_NAME` | `issueflow` | PostgreSQL database |
 | `JWT_SECRET` | `issueflow-secret` | JWT signing secret (change in production) |
 | `UPLOAD_PATH` | `./uploads` | Directory for attachment files |
+
+## Viewing the Knowledge Graph
+
+The codebase was analyzed with Graphify, producing an interactive knowledge graph in `graphify-out/`.
+
+- **Interactive visualization:** open `graphify-out/graph.html` in a browser
+- **Text summary:** read `graphify-out/GRAPH_REPORT.md`

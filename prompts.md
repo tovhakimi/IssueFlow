@@ -207,6 +207,99 @@ actor=USER/action=CREATE first, then actor=SYSTEM/action=AUTO_ASSIGN second.
 - src/tickets/tickets.controller.ts
 - src/tickets/tickets.module.ts
 
+### Fix 1: AUTO_ASSIGN Audit Log
+
+**Problem identified:**
+Review of tickets.service.ts revealed auto-assignment was merging into the CREATE log entry —
+setting actor=SYSTEM on the CREATE record instead of writing a second entry. The human who
+triggered the ticket creation was being erased from the audit trail.
+
+**Requirement (CLAUDE.md rule 13):** Every state-changing action writes to AuditLog with
+actor=USER|SYSTEM. Auto-assignment should be a separate SYSTEM entry alongside the USER CREATE.
+
+**Prompt:**
+Each auto-assignment is recorded in the Audit Log with actor = SYSTEM, action = AUTO_ASSIGN.
+Change to it respectively. The CREATE entry must always have actor=USER and performedBy=userId.
+Write a second log entry with actor=SYSTEM/action=AUTO_ASSIGN only when auto-assignment fires.
+Update the unit test that asserts on these two separate log calls.
+
+**Fix:**
+Always write actor=USER/action=CREATE, then write a second actor=SYSTEM/action=AUTO_ASSIGN entry
+only when auto-assignment fires.
+
+**Files changed:**
+- src/tickets/tickets.service.ts
+- src/tickets/tickets.service.spec.ts
+
+### Fix 2: TicketType Enum: TASK → TECHNICAL
+
+**Problem identified:**
+The spec defines ticket types as BUG, FEATURE, TECHNICAL. The initial implementation used TASK
+instead of TECHNICAL, which would cause validation failures on import and mismatches with the API
+contract.
+
+**Prompt:**
+Look at @src/tickets/ticket.entity.ts, change the TicketType to -> BUG, FEATURE, TECHNICAL
+respectively. Then change the entire codebase references to 'TASK', running unit tests after
+each change and e2e tests at the end.
+
+**What changed:**
+Renamed `TicketType.TASK` to `TicketType.TECHNICAL` across the entire codebase.
+
+**Files changed:**
+- src/tickets/ticket.entity.ts (enum value + column default)
+- src/tickets/tickets.service.spec.ts (mock data)
+- src/tickets/tickets.performance.spec.ts (mock data + CSV string)
+
+**Tests:**
+- Unit tests: 27/27 passed (6 suites) — ran after each file change to catch breakage incrementally
+- E2e tests: 24/24 passed (2 suites) — ran at the end to verify full application
+
+### Fix 5: Auto-Assignment & Workload — 4 Bugs
+
+**Problem identified:**
+Verification of the auto-assignment feature (section 3.8) and workload endpoint found four bugs
+that would cause runtime failures or incorrect API responses:
+
+1. **Workload query missing LEFT JOIN**: `getWorkload()` in `projects.service.ts` had no
+   `LEFT JOIN tickets t ON t."assigneeId" = u.id`, so the `COUNT(t.id) FILTER (...)` had no
+   ticket rows to count — the query would crash or return zero for everyone.
+
+2. **Response field name mismatch**: Workload response used `activeTickets` instead of
+   `openTicketCount`, violating the API contract (spec says `openTicketCount`).
+
+3. **Workload sort order wrong**: Results were sorted by `u."createdAt" ASC` (user creation date)
+   instead of `"openTicketCount" ASC` (least loaded first), which is what callers expect for
+   load-balanced assignment visibility.
+
+4. **AUTO_ASSIGN audit log fires with no assignee**: In `tickets.service.ts`, the guard was
+   `if (autoAssigned)` — when no DEVELOPER exists in the project, `autoAssign()` returns
+   `undefined` but the audit log still recorded a bogus `AUTO_ASSIGN` entry with
+   `changes: { assigneeId: undefined }`.
+
+**Prompt:**
+Fix 4 bugs in auto-assignment and workload:
+1. Add `LEFT JOIN tickets t ON t."assigneeId" = u.id` to the workload query
+2. Rename response field `activeTickets` → `openTicketCount`
+3. Change workload ORDER BY from `u."createdAt" ASC` to `"openTicketCount" ASC`
+4. Change auto-assign audit guard from `if (autoAssigned)` to `if (autoAssigned && assigneeId)`
+
+**Fix applied:**
+1. Added `LEFT JOIN tickets t ON t."assigneeId" = u.id` to the raw SQL in
+   `projects.service.ts:getWorkload()`.
+2. Changed the SELECT alias and response mapping from `activeTickets` to `openTicketCount`.
+3. Changed `ORDER BY` from `u."createdAt" ASC` to `"openTicketCount" ASC`.
+4. Changed the audit log guard in `tickets.service.ts:create()` from `if (autoAssigned)` to
+   `if (autoAssigned && assigneeId)` — no log entry when auto-assignment finds no developer.
+
+**Files changed:**
+- src/projects/projects.service.ts (workload query: added LEFT JOIN, fixed field name, fixed sort)
+- src/tickets/tickets.service.ts (auto-assign audit guard: added `&& assigneeId` check)
+
+**Tests:**
+- All 31 tests passing (25 unit + 6 e2e)
+- Build: clean (npx tsc --noEmit — no errors)
+
 ---
 
 ## Phase 4: Comments + Mentions + Audit Log
@@ -256,6 +349,79 @@ Alternative (UsersModule importing CommentsModule importing UsersModule) would c
 - src/comments/mentions.controller.ts
 - src/comments/comments.module.ts
 
+### Fix 4: @Mention Mechanism — 4 Bugs
+
+**Problem identified:**
+Manual audit of the @mention feature (section 3.6) against the spec found four issues:
+
+1. **Case-insensitive matching broken**: `findByUsername()` in `users.service.ts` used a plain
+   `findOne({ where: { username } })` — case-sensitive. But `parseMentions()` lowercases extracted
+   usernames before lookup, so `@JohnDoe` would search for `"johndoe"` and never match `"JohnDoe"`
+   in the database.
+
+2. **Comment responses missing `mentionedUsers` metadata**: The spec requires every comment response
+   to include `mentionedUsers: [{ id, username, fullName }]`. All endpoints (create, update, findOne,
+   findAll) returned raw Comment entities with no mention data attached.
+
+3. **`findMentionsByUser` broken and returning wrong type**: The method attempted
+   `leftJoinAndSelect('m.commentId', 'comment')` on a plain column (not a relation), which fails.
+   It then fell back to returning raw Mention rows instead of full comments. The spec says
+   "returns all comments where that user was mentioned, newest first."
+
+4. **`Mention` entity had no relations**: Only `commentId` and `userId` as plain `@Column()` — no
+   `@ManyToOne` relations to Comment or User, making joins and eager loading impossible.
+
+**Prompt:**
+Fix the @mention mechanism to match the spec. Currently there are 4 bugs:
+
+1. `findByUsername` in `users.service.ts` does a case-sensitive lookup, but `parseMentions`
+   lowercases usernames before searching. Use a case-insensitive query so `@JohnDoe` and
+   `@johndoe` both resolve.
+
+2. Comment responses (create, update, findOne, findAll) don't include
+   `mentionedUsers: [{ id, username, fullName }]`. Every comment response needs this field
+   populated from the mentions table.
+
+3. `findMentionsByUser` has a broken join on a plain column and returns raw mention rows. It
+   should return the actual comments where the user was mentioned, newest first.
+
+4. The `Mention` entity has no `@ManyToOne` relations to `Comment` or `User`, so joins and eager
+   loading don't work.
+
+Fix all four. Add `@ManyToOne` relations on `Mention` to both `Comment` and `User`, add a
+`mentions` relation on `Comment`, make `findByUsername` case-insensitive with `ILike`, fix
+`findMentionsByUser` to return comments with mention metadata, and enrich all comment endpoints
+to include `mentionedUsers`.
+
+**Fix applied:**
+1. **Mention entity**: Added `@ManyToOne` relations to `Comment` (with back-reference) and `User`
+   (eager: true), with `@JoinColumn` on both. Added `onDelete: 'CASCADE'`.
+2. **Comment entity**: Added `@OneToMany` to `Mention` with `eager: true`, so mentions are loaded
+   on every comment query automatically.
+3. **`findByUsername`**: Changed from `findOne({ where: { username } })` to
+   `findOne({ where: { username: ILike(username) } })`. Imported `ILike` from TypeORM.
+4. **CommentsService**:
+   - Added `formatComment()` helper that maps `comment.mentions` to
+     `mentionedUsers: [{ id, username, fullName }]`.
+   - `create()` and `update()` now re-fetch the comment after saving (to get eager-loaded
+     mentions) and return via `formatComment()`.
+   - `findAll()` and `findOne()` return via `formatComment()`.
+   - `findMentionsByUser()` rewritten: queries mention rows to get commentIds, then fetches
+     full comments with eager mentions, returns `{ comments: [...], total }`.
+5. **Tests**: Updated `comments.service.spec.ts` mocks to provide `mentions` arrays on comment
+   objects and assert `mentionedUsers` in responses.
+
+**Files changed:**
+- src/comments/mention.entity.ts — added @ManyToOne relations to Comment and User
+- src/comments/comment.entity.ts — added @OneToMany relation to Mention (eager)
+- src/users/users.service.ts — ILike import + case-insensitive findByUsername
+- src/comments/comments.service.ts — formatComment, enrichComment, fixed findMentionsByUser
+- src/comments/comments.service.spec.ts — updated mocks for new response shape
+
+**Tests:**
+- Comments suite: 5/5 passing
+- Build: clean (npx tsc --noEmit — no errors)
+
 ---
 
 ## Phase 5: Dependencies + Attachments + Export/Import
@@ -302,6 +468,35 @@ Return { created: N, failed: N, errors: ["Row 3: ..."] }.
 - src/tickets/attachment.entity.ts
 - src/tickets/dto/create-dependency.dto.ts
 - (tickets.service.ts and tickets.controller.ts extended with dependency/attachment/CSV logic)
+
+### Fix 3: Dependency API Contract Corrections
+
+**Problem identified:**
+A manual audit of the dependency feature against the spec (section 3.2) found three contract
+violations:
+
+1. **DTO field name mismatch**: Spec requires `{ "blockedBy": 42 }` but DTO used `blockedById`.
+2. **DELETE route parameter name**: Spec says `/dependencies/{blockerId}` but route used `:blockedById`.
+3. **GET response format**: Spec expects the blocking Ticket objects returned; implementation
+   returned raw `TicketDependency` join rows (only id/ticketId/blockedById — not useful to callers).
+4. **Deprecated TypeORM API**: `findByIds()` used in `assertNoBlockers()` is deprecated in TypeORM
+   0.3.20; replaced with `findBy({ id: In([...]) })`.
+
+**Prompts used in diagnosis:**
+- `GET /tickets/{ticketId}/dependencies returns all tickets this ticket is blocked by` — spec text
+  flagged that "tickets" (not dependency records) is the expected return type.
+- `POST body { "blockedBy": 42 }` — spec literal showed field name discrepancy.
+- `DELETE /tickets/{ticketId}/dependencies/{blockerId}` — parameter name in spec vs `:blockedById`
+  in code.
+
+**Files changed:**
+- src/tickets/dto/create-dependency.dto.ts — field renamed `blockedById` → `blockedBy`
+- src/tickets/tickets.controller.ts — route param `:blockedById` → `:blockerId`
+- src/tickets/tickets.service.ts:
+  - `addDependency()`: references updated to `dto.blockedBy`
+  - `getDependencies()`: now returns `Ticket[]` (fetches actual blocker entities via `findBy({ id: In([...]) })`)
+  - `assertNoBlockers()`: replaced deprecated `findByIds()` with `findBy({ id: In(blockerIds) })`
+  - Added `In` to TypeORM import
 
 ---
 
@@ -399,205 +594,25 @@ actual implementation — flag any discrepancies.
 
 ---
 
-## Fix 1: AUTO_ASSIGN Audit Log
+## Graphify: Codebase Knowledge Graph
 
-**Problem identified:**
-Review of tickets.service.ts revealed auto-assignment was merging into the CREATE log entry —
-setting actor=SYSTEM on the CREATE record instead of writing a second entry. The human who
-triggered the ticket creation was being erased from the audit trail.
+Ran `/graphify` to generate a knowledge graph of the entire IssueFlow codebase.
 
-**Requirement (CLAUDE.md rule 13):** Every state-changing action writes to AuditLog with
-actor=USER|SYSTEM. Auto-assignment should be a separate SYSTEM entry alongside the USER CREATE.
+**What it produced:** `graphify-out/` directory containing:
+- `GRAPH_REPORT.md` — text summary of the graph analysis
+- `graph.html` — interactive HTML visualization (open in browser)
+- Cached AST and semantic analysis data
 
-**Prompt:**
-Each auto-assignment is recorded in the Audit Log with actor = SYSTEM, action = AUTO_ASSIGN.
-Change to it respectively. The CREATE entry must always have actor=USER and performedBy=userId.
-Write a second log entry with actor=SYSTEM/action=AUTO_ASSIGN only when auto-assignment fires.
-Update the unit test that asserts on these two separate log calls.
+**Key stats from the report:**
+- 422 nodes, 735 edges, 18 communities
+- 71 files analyzed
 
-**Fix:**
-Always write actor=USER/action=CREATE, then write a second actor=SYSTEM/action=AUTO_ASSIGN entry
-only when auto-assignment fires.
+**God nodes (most connected):**
+| Node | Edges |
+|---|---|
+| TicketsService | 26 |
+| TicketsController | 18 |
+| UsersService | 17 |
+| CommentsService | 15 |
 
-**Files changed:**
-- src/tickets/tickets.service.ts
-- src/tickets/tickets.service.spec.ts
-
----
-
-## Fix 2: TicketType Enum: TASK → TECHNICAL
-
-**Problem identified:**
-The spec defines ticket types as BUG, FEATURE, TECHNICAL. The initial implementation used TASK
-instead of TECHNICAL, which would cause validation failures on import and mismatches with the API
-contract.
-
-**Prompt:**
-Look at @src/tickets/ticket.entity.ts, change the TicketType to -> BUG, FEATURE, TECHNICAL
-respectively. Then change the entire codebase references to 'TASK', running unit tests after
-each change and e2e tests at the end.
-
-**What changed:**
-Renamed `TicketType.TASK` to `TicketType.TECHNICAL` across the entire codebase.
-
-**Files changed:**
-- src/tickets/ticket.entity.ts (enum value + column default)
-- src/tickets/tickets.service.spec.ts (mock data)
-- src/tickets/tickets.performance.spec.ts (mock data + CSV string)
-
-**Tests:**
-- Unit tests: 27/27 passed (6 suites) — ran after each file change to catch breakage incrementally
-- E2e tests: 24/24 passed (2 suites) — ran at the end to verify full application
-
----
-
-## Fix 3: Dependency API Contract Corrections
-
-**Problem identified:**
-A manual audit of the dependency feature against the spec (section 3.2) found three contract
-violations:
-
-1. **DTO field name mismatch**: Spec requires `{ "blockedBy": 42 }` but DTO used `blockedById`.
-2. **DELETE route parameter name**: Spec says `/dependencies/{blockerId}` but route used `:blockedById`.
-3. **GET response format**: Spec expects the blocking Ticket objects returned; implementation
-   returned raw `TicketDependency` join rows (only id/ticketId/blockedById — not useful to callers).
-4. **Deprecated TypeORM API**: `findByIds()` used in `assertNoBlockers()` is deprecated in TypeORM
-   0.3.20; replaced with `findBy({ id: In([...]) })`.
-
-**Prompts used in diagnosis:**
-- `GET /tickets/{ticketId}/dependencies returns all tickets this ticket is blocked by` — spec text
-  flagged that "tickets" (not dependency records) is the expected return type.
-- `POST body { "blockedBy": 42 }` — spec literal showed field name discrepancy.
-- `DELETE /tickets/{ticketId}/dependencies/{blockerId}` — parameter name in spec vs `:blockedById`
-  in code.
-
-**Files changed:**
-- src/tickets/dto/create-dependency.dto.ts — field renamed `blockedById` → `blockedBy`
-- src/tickets/tickets.controller.ts — route param `:blockedById` → `:blockerId`
-- src/tickets/tickets.service.ts:
-  - `addDependency()`: references updated to `dto.blockedBy`
-  - `getDependencies()`: now returns `Ticket[]` (fetches actual blocker entities via `findBy({ id: In([...]) })`)
-  - `assertNoBlockers()`: replaced deprecated `findByIds()` with `findBy({ id: In(blockerIds) })`
-  - Added `In` to TypeORM import
-
----
-
-## Fix 4: @Mention Mechanism — 4 Bugs
-
-**Problem identified:**
-Manual audit of the @mention feature (section 3.6) against the spec found four issues:
-
-1. **Case-insensitive matching broken**: `findByUsername()` in `users.service.ts` used a plain
-   `findOne({ where: { username } })` — case-sensitive. But `parseMentions()` lowercases extracted
-   usernames before lookup, so `@JohnDoe` would search for `"johndoe"` and never match `"JohnDoe"`
-   in the database.
-
-2. **Comment responses missing `mentionedUsers` metadata**: The spec requires every comment response
-   to include `mentionedUsers: [{ id, username, fullName }]`. All endpoints (create, update, findOne,
-   findAll) returned raw Comment entities with no mention data attached.
-
-3. **`findMentionsByUser` broken and returning wrong type**: The method attempted
-   `leftJoinAndSelect('m.commentId', 'comment')` on a plain column (not a relation), which fails.
-   It then fell back to returning raw Mention rows instead of full comments. The spec says
-   "returns all comments where that user was mentioned, newest first."
-
-4. **`Mention` entity had no relations**: Only `commentId` and `userId` as plain `@Column()` — no
-   `@ManyToOne` relations to Comment or User, making joins and eager loading impossible.
-
-**Prompt:**
-Fix the @mention mechanism to match the spec. Currently there are 4 bugs:
-
-1. `findByUsername` in `users.service.ts` does a case-sensitive lookup, but `parseMentions`
-   lowercases usernames before searching. Use a case-insensitive query so `@JohnDoe` and
-   `@johndoe` both resolve.
-
-2. Comment responses (create, update, findOne, findAll) don't include
-   `mentionedUsers: [{ id, username, fullName }]`. Every comment response needs this field
-   populated from the mentions table.
-
-3. `findMentionsByUser` has a broken join on a plain column and returns raw mention rows. It
-   should return the actual comments where the user was mentioned, newest first.
-
-4. The `Mention` entity has no `@ManyToOne` relations to `Comment` or `User`, so joins and eager
-   loading don't work.
-
-Fix all four. Add `@ManyToOne` relations on `Mention` to both `Comment` and `User`, add a
-`mentions` relation on `Comment`, make `findByUsername` case-insensitive with `ILike`, fix
-`findMentionsByUser` to return comments with mention metadata, and enrich all comment endpoints
-to include `mentionedUsers`.
-
-**Fix applied:**
-1. **Mention entity**: Added `@ManyToOne` relations to `Comment` (with back-reference) and `User`
-   (eager: true), with `@JoinColumn` on both. Added `onDelete: 'CASCADE'`.
-2. **Comment entity**: Added `@OneToMany` to `Mention` with `eager: true`, so mentions are loaded
-   on every comment query automatically.
-3. **`findByUsername`**: Changed from `findOne({ where: { username } })` to
-   `findOne({ where: { username: ILike(username) } })`. Imported `ILike` from TypeORM.
-4. **CommentsService**:
-   - Added `formatComment()` helper that maps `comment.mentions` to
-     `mentionedUsers: [{ id, username, fullName }]`.
-   - `create()` and `update()` now re-fetch the comment after saving (to get eager-loaded
-     mentions) and return via `formatComment()`.
-   - `findAll()` and `findOne()` return via `formatComment()`.
-   - `findMentionsByUser()` rewritten: queries mention rows to get commentIds, then fetches
-     full comments with eager mentions, returns `{ comments: [...], total }`.
-5. **Tests**: Updated `comments.service.spec.ts` mocks to provide `mentions` arrays on comment
-   objects and assert `mentionedUsers` in responses.
-
-**Files changed:**
-- src/comments/mention.entity.ts — added @ManyToOne relations to Comment and User
-- src/comments/comment.entity.ts — added @OneToMany relation to Mention (eager)
-- src/users/users.service.ts — ILike import + case-insensitive findByUsername
-- src/comments/comments.service.ts — formatComment, enrichComment, fixed findMentionsByUser
-- src/comments/comments.service.spec.ts — updated mocks for new response shape
-
-**Tests:**
-- Comments suite: 5/5 passing
-- Build: clean (npx tsc --noEmit — no errors)
-
----
-
-## Fix 5: Auto-Assignment & Workload — 4 Bugs
-
-**Problem identified:**
-Verification of the auto-assignment feature (section 3.8) and workload endpoint found four bugs
-that would cause runtime failures or incorrect API responses:
-
-1. **Workload query missing LEFT JOIN**: `getWorkload()` in `projects.service.ts` had no
-   `LEFT JOIN tickets t ON t."assigneeId" = u.id`, so the `COUNT(t.id) FILTER (...)` had no
-   ticket rows to count — the query would crash or return zero for everyone.
-
-2. **Response field name mismatch**: Workload response used `activeTickets` instead of
-   `openTicketCount`, violating the API contract (spec says `openTicketCount`).
-
-3. **Workload sort order wrong**: Results were sorted by `u."createdAt" ASC` (user creation date)
-   instead of `"openTicketCount" ASC` (least loaded first), which is what callers expect for
-   load-balanced assignment visibility.
-
-4. **AUTO_ASSIGN audit log fires with no assignee**: In `tickets.service.ts`, the guard was
-   `if (autoAssigned)` — when no DEVELOPER exists in the project, `autoAssign()` returns
-   `undefined` but the audit log still recorded a bogus `AUTO_ASSIGN` entry with
-   `changes: { assigneeId: undefined }`.
-
-**Prompt:**
-Fix 4 bugs in auto-assignment and workload:
-1. Add `LEFT JOIN tickets t ON t."assigneeId" = u.id` to the workload query
-2. Rename response field `activeTickets` → `openTicketCount`
-3. Change workload ORDER BY from `u."createdAt" ASC` to `"openTicketCount" ASC`
-4. Change auto-assign audit guard from `if (autoAssigned)` to `if (autoAssigned && assigneeId)`
-
-**Fix applied:**
-1. Added `LEFT JOIN tickets t ON t."assigneeId" = u.id` to the raw SQL in
-   `projects.service.ts:getWorkload()`.
-2. Changed the SELECT alias and response mapping from `activeTickets` to `openTicketCount`.
-3. Changed `ORDER BY` from `u."createdAt" ASC` to `"openTicketCount" ASC`.
-4. Changed the audit log guard in `tickets.service.ts:create()` from `if (autoAssigned)` to
-   `if (autoAssigned && assigneeId)` — no log entry when auto-assignment finds no developer.
-
-**Files changed:**
-- src/projects/projects.service.ts (workload query: added LEFT JOIN, fixed field name, fixed sort)
-- src/tickets/tickets.service.ts (auto-assign audit guard: added `&& assigneeId` check)
-
-**Tests:**
-- All 31 tests passing (25 unit + 6 e2e)
-- Build: clean (npx tsc --noEmit — no errors)
+**Generated files:** `graphify-out/` directory (gitignored)
