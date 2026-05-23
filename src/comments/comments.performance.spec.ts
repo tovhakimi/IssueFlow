@@ -59,8 +59,10 @@ describe('CommentsService — performance', () => {
 
     const commentRepo = service['commentRepo'] as any;
     const mentionRepo = service['mentionRepo'] as any;
+    const saved = { id: 1, ticketId: 1, content, version: 1, mentions: [] };
     commentRepo.create.mockImplementation((dto: any) => dto);
-    commentRepo.save.mockResolvedValue({ id: 1, ticketId: 1, content, version: 1 });
+    commentRepo.save.mockResolvedValue(saved);
+    commentRepo.findOne.mockResolvedValue(saved);
     mentionRepo.find.mockResolvedValue([]);
 
     const start = Date.now();
@@ -79,8 +81,10 @@ describe('CommentsService — performance', () => {
 
     const commentRepo = service['commentRepo'] as any;
     const mentionRepo = service['mentionRepo'] as any;
+    const saved = { id: 1, ticketId: 1, content, version: 1, mentions: [] };
     commentRepo.create.mockImplementation((dto: any) => dto);
-    commentRepo.save.mockResolvedValue({ id: 1, ticketId: 1, content, version: 1 });
+    commentRepo.save.mockResolvedValue(saved);
+    commentRepo.findOne.mockResolvedValue(saved);
     mentionRepo.find.mockResolvedValue([]);
 
     const start = Date.now();
