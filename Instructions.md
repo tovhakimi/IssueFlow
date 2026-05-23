@@ -17,3 +17,4 @@
 - AUTO_ASSIGN audit log: tickets.service.ts was merging auto-assignment into the CREATE log entry. Fixed to write two separate entries — actor=USER/action=CREATE and actor=SYSTEM/action=AUTO_ASSIGN. Tests updated to assert both.
 - TicketType TASK → TECHNICAL: renamed enum value across entity, service spec, and performance spec to match API contract.
 - Dependency API contract: fixed 3 violations — DTO field `blockedById` → `blockedBy`, DELETE param `:blockedById` → `:blockerId`, GET now returns Ticket[] instead of TicketDependency[]. Replaced deprecated findByIds() with findBy({ id: In([...]) }).
+- @Mention mechanism: fixed 4 bugs — (1) case-insensitive username lookup via ILike, (2) added `mentionedUsers: [{ id, username, fullName }]` to all comment responses, (3) `findMentionsByUser` now returns full comments instead of raw mention rows, (4) added @ManyToOne/@OneToMany relations on Mention↔Comment and Mention→User with eager loading.

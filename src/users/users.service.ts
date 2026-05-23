@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, ILike } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from './user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -37,7 +37,7 @@ export class UsersService {
   }
 
   async findByUsername(username: string): Promise<User | null> {
-    return this.repo.findOne({ where: { username } });
+    return this.repo.findOne({ where: { username: ILike(username) } });
   }
 
   async update(id: number, dto: UpdateUserDto): Promise<Omit<User, 'passwordHash'>> {

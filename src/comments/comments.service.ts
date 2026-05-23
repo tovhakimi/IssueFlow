@@ -24,7 +24,7 @@ export class CommentsService {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  async create(ticketId: number, dto: CreateCommentDto, userId: number): Promise<Comment> {
+  async create(ticketId: number, dto: CreateCommentDto, userId: number) {
     const comment = this.commentRepo.create({ ticketId, authorId: userId, content: dto.content });
     const saved = await this.commentRepo.save(comment);
 
@@ -38,17 +38,22 @@ export class CommentsService {
       performedBy: userId,
     });
 
-    return saved;
+    // Re-fetch with mentions eager-loaded
+    return this.enrichComment(saved.id, ticketId);
   }
 
-  async findAll(ticketId: number): Promise<Comment[]> {
-    return this.commentRepo.find({ where: { ticketId }, order: { createdAt: 'DESC' } });
+  async findAll(ticketId: number) {
+    const comments = await this.commentRepo.find({
+      where: { ticketId },
+      order: { createdAt: 'DESC' },
+    });
+    return comments.map((c) => this.formatComment(c));
   }
 
-  async findOne(ticketId: number, commentId: number): Promise<Comment> {
+  async findOne(ticketId: number, commentId: number) {
     const comment = await this.commentRepo.findOne({ where: { id: commentId, ticketId } });
     if (!comment) throw new NotFoundException(`Comment ${commentId} not found`);
-    return comment;
+    return this.formatComment(comment);
   }
 
   async update(
@@ -56,8 +61,9 @@ export class CommentsService {
     commentId: number,
     dto: UpdateCommentDto,
     userId: number,
-  ): Promise<Comment> {
-    const comment = await this.findOne(ticketId, commentId);
+  ) {
+    const comment = await this.commentRepo.findOne({ where: { id: commentId, ticketId } });
+    if (!comment) throw new NotFoundException(`Comment ${commentId} not found`);
 
     // Optimistic locking check
     if (dto.version !== undefined && dto.version !== comment.version) {
@@ -65,7 +71,7 @@ export class CommentsService {
     }
 
     comment.content = dto.content;
-    const saved = await this.commentRepo.save(comment);
+    await this.commentRepo.save(comment);
 
     await this.syncMentions(commentId, dto.content);
 
@@ -78,11 +84,13 @@ export class CommentsService {
       changes: { content: dto.content },
     });
 
-    return saved;
+    // Re-fetch with mentions eager-loaded
+    return this.enrichComment(commentId, ticketId);
   }
 
   async remove(ticketId: number, commentId: number, userId: number): Promise<{ message: string }> {
-    const comment = await this.findOne(ticketId, commentId);
+    const comment = await this.commentRepo.findOne({ where: { id: commentId, ticketId } });
+    if (!comment) throw new NotFoundException(`Comment ${commentId} not found`);
     await this.mentionRepo.delete({ commentId });
     await this.commentRepo.remove(comment);
 
@@ -101,40 +109,73 @@ export class CommentsService {
     userId: number,
     page = 1,
     limit = 20,
-  ): Promise<{ mentions: any[]; total: number }> {
+  ) {
     const skip = (page - 1) * limit;
-    const [mentions, total] = await this.mentionRepo
-      .createQueryBuilder('m')
-      .leftJoinAndSelect('m.commentId', 'comment')
-      .where('m.userId = :userId', { userId })
-      .orderBy('m.createdAt', 'DESC')
-      .skip(skip)
-      .take(limit)
-      .getManyAndCount();
 
-    // Return raw mention data with commentId as foreign key
-    const rows = await this.mentionRepo.find({
+    // Find comment IDs where the user is mentioned
+    const [mentions, total] = await this.mentionRepo.findAndCount({
       where: { userId },
       order: { createdAt: 'DESC' },
       skip,
       take: limit,
     });
 
-    return { mentions: rows, total };
+    if (mentions.length === 0) {
+      return { comments: [], total };
+    }
+
+    // Fetch full comments (with eager-loaded mentions) for each mention
+    const commentIds = [...new Set(mentions.map((m) => m.commentId))];
+    const comments = await this.commentRepo
+      .createQueryBuilder('c')
+      .whereInIds(commentIds)
+      .orderBy('c.createdAt', 'DESC')
+      .getMany();
+
+    return {
+      comments: comments.map((c) => this.formatComment(c)),
+      total,
+    };
   }
 
-  // ─── Mention helpers ─────────────────────────────────────────────────────────
+  // ─── Helpers ────────────────────────────────────────────────────────────────
+
+  /** Re-fetch a comment with eager-loaded mentions and format it */
+  private async enrichComment(commentId: number, ticketId: number) {
+    const fresh = await this.commentRepo.findOne({ where: { id: commentId, ticketId } });
+    if (!fresh) throw new NotFoundException(`Comment ${commentId} not found`);
+    return this.formatComment(fresh);
+  }
+
+  /** Transform a comment entity into a response with mentionedUsers */
+  private formatComment(comment: Comment) {
+    const mentionedUsers = (comment.mentions || []).map((m) => ({
+      id: m.user.id,
+      username: m.user.username,
+      fullName: m.user.fullName,
+    }));
+
+    return {
+      id: comment.id,
+      ticketId: comment.ticketId,
+      authorId: comment.authorId,
+      content: comment.content,
+      version: comment.version,
+      createdAt: comment.createdAt,
+      updatedAt: comment.updatedAt,
+      mentionedUsers,
+    };
+  }
 
   private parseMentions(content: string): string[] {
     const matches = content.match(/@([a-zA-Z0-9_]+)/g) || [];
-    // De-duplicate and lowercase for case-insensitive matching
     return [...new Set(matches.map(m => m.slice(1).toLowerCase()))];
   }
 
   private async syncMentions(commentId: number, content: string): Promise<void> {
     const usernames = this.parseMentions(content);
 
-    // Resolve usernames to user IDs
+    // Resolve usernames to user IDs (case-insensitive via findByUsername)
     const mentionedUserIds: number[] = [];
     for (const username of usernames) {
       const user = await this.usersService.findByUsername(username);

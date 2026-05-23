@@ -65,9 +65,6 @@ Outputs:
 **Generated:**
 - .claude/skills/document-phase/SKILL.md
 
-**Manual Changes:**
-None
-
 ---
 
 ## Phase 2: Foundation + Users + Auth
@@ -135,9 +132,6 @@ passwordHash, createdAt
 - src/auth/auth.controller.ts
 - src/auth/auth.module.ts
 - package.json (added auth/schedule/bcrypt packages)
-
-**Manual Changes:**
-None
 
 ---
 
@@ -216,9 +210,6 @@ actor=USER/action=CREATE first, then actor=SYSTEM/action=AUTO_ASSIGN second.
 - src/tickets/tickets.controller.ts
 - src/tickets/tickets.module.ts
 
-**Manual Changes:**
-None
-
 ---
 
 ## Phase 4: Comments + Mentions + Audit Log
@@ -268,9 +259,6 @@ Alternative (UsersModule importing CommentsModule importing UsersModule) would c
 - src/comments/mentions.controller.ts
 - src/comments/comments.module.ts
 
-**Manual Changes:**
-None
-
 ---
 
 ## Phase 5: Dependencies + Attachments + Export/Import
@@ -318,9 +306,6 @@ Return { created: N, failed: N, errors: ["Row 3: ..."] }.
 - src/tickets/dto/create-dependency.dto.ts
 - (tickets.service.ts and tickets.controller.ts extended with dependency/attachment/CSV logic)
 
-**Manual Changes:**
-None
-
 ---
 
 ## Phase 6: Scheduler (Auto-Escalation)
@@ -354,9 +339,6 @@ re-entry for each escalated ticket.
 **Generated:**
 - src/scheduler/escalation.service.ts
 - src/scheduler/scheduler.module.ts
-
-**Manual Changes:**
-None
 
 ---
 
@@ -404,9 +386,6 @@ escalation.service.spec.ts:
 - src/scheduler/escalation.service.spec.ts
 - test/app.e2e-spec.ts
 
-**Manual Changes:**
-None
-
 ---
 
 ## Phase 8: Documentation
@@ -420,9 +399,6 @@ actual implementation — flag any discrepancies.
 - prompts.md (initial version)
 - Instructions.md (updated Phase Log)
 - run.md
-
-**Manual Changes:**
-None
 
 ---
 
@@ -506,3 +482,78 @@ violations:
   - `getDependencies()`: now returns `Ticket[]` (fetches actual blocker entities via `findBy({ id: In([...]) })`)
   - `assertNoBlockers()`: replaced deprecated `findByIds()` with `findBy({ id: In(blockerIds) })`
   - Added `In` to TypeORM import
+
+---
+
+## Fix 4: @Mention Mechanism — 4 Bugs
+
+**Problem identified:**
+Manual audit of the @mention feature (section 3.6) against the spec found four issues:
+
+1. **Case-insensitive matching broken**: `findByUsername()` in `users.service.ts` used a plain
+   `findOne({ where: { username } })` — case-sensitive. But `parseMentions()` lowercases extracted
+   usernames before lookup, so `@JohnDoe` would search for `"johndoe"` and never match `"JohnDoe"`
+   in the database.
+
+2. **Comment responses missing `mentionedUsers` metadata**: The spec requires every comment response
+   to include `mentionedUsers: [{ id, username, fullName }]`. All endpoints (create, update, findOne,
+   findAll) returned raw Comment entities with no mention data attached.
+
+3. **`findMentionsByUser` broken and returning wrong type**: The method attempted
+   `leftJoinAndSelect('m.commentId', 'comment')` on a plain column (not a relation), which fails.
+   It then fell back to returning raw Mention rows instead of full comments. The spec says
+   "returns all comments where that user was mentioned, newest first."
+
+4. **`Mention` entity had no relations**: Only `commentId` and `userId` as plain `@Column()` — no
+   `@ManyToOne` relations to Comment or User, making joins and eager loading impossible.
+
+**Prompt:**
+Fix the @mention mechanism to match the spec. Currently there are 4 bugs:
+
+1. `findByUsername` in `users.service.ts` does a case-sensitive lookup, but `parseMentions`
+   lowercases usernames before searching. Use a case-insensitive query so `@JohnDoe` and
+   `@johndoe` both resolve.
+
+2. Comment responses (create, update, findOne, findAll) don't include
+   `mentionedUsers: [{ id, username, fullName }]`. Every comment response needs this field
+   populated from the mentions table.
+
+3. `findMentionsByUser` has a broken join on a plain column and returns raw mention rows. It
+   should return the actual comments where the user was mentioned, newest first.
+
+4. The `Mention` entity has no `@ManyToOne` relations to `Comment` or `User`, so joins and eager
+   loading don't work.
+
+Fix all four. Add `@ManyToOne` relations on `Mention` to both `Comment` and `User`, add a
+`mentions` relation on `Comment`, make `findByUsername` case-insensitive with `ILike`, fix
+`findMentionsByUser` to return comments with mention metadata, and enrich all comment endpoints
+to include `mentionedUsers`.
+
+**Fix applied:**
+1. **Mention entity**: Added `@ManyToOne` relations to `Comment` (with back-reference) and `User`
+   (eager: true), with `@JoinColumn` on both. Added `onDelete: 'CASCADE'`.
+2. **Comment entity**: Added `@OneToMany` to `Mention` with `eager: true`, so mentions are loaded
+   on every comment query automatically.
+3. **`findByUsername`**: Changed from `findOne({ where: { username } })` to
+   `findOne({ where: { username: ILike(username) } })`. Imported `ILike` from TypeORM.
+4. **CommentsService**:
+   - Added `formatComment()` helper that maps `comment.mentions` to
+     `mentionedUsers: [{ id, username, fullName }]`.
+   - `create()` and `update()` now re-fetch the comment after saving (to get eager-loaded
+     mentions) and return via `formatComment()`.
+   - `findAll()` and `findOne()` return via `formatComment()`.
+   - `findMentionsByUser()` rewritten: queries mention rows to get commentIds, then fetches
+     full comments with eager mentions, returns `{ comments: [...], total }`.
+5. **Tests**: Updated `comments.service.spec.ts` mocks to provide `mentions` arrays on comment
+   objects and assert `mentionedUsers` in responses.
+
+**Files changed:**
+- src/comments/mention.entity.ts — added @ManyToOne relations to Comment and User
+- src/comments/comment.entity.ts — added @OneToMany relation to Mention (eager)
+- src/users/users.service.ts — ILike import + case-insensitive findByUsername
+- src/comments/comments.service.ts — formatComment, enrichComment, fixed findMentionsByUser
+- src/comments/comments.service.spec.ts — updated mocks for new response shape
+
+**Tests:**
+- Comments suite: 5/5 passing
+- Build: clean (npx tsc --noEmit — no errors)

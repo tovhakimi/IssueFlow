@@ -5,7 +5,9 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   VersionColumn,
+  OneToMany,
 } from 'typeorm';
+import { Mention } from './mention.entity';
 
 @Entity('comments')
 export class Comment {
@@ -29,4 +31,7 @@ export class Comment {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  @OneToMany(() => Mention, (mention) => mention.comment, { eager: true })
+  mentions: Mention[];
 }
