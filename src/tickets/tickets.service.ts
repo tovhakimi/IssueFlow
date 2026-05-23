@@ -183,6 +183,7 @@ export class TicketsService {
                   AND t."deletedAt" IS NULL
               ) AS active_count
        FROM users u
+       LEFT JOIN tickets t ON t."assigneeId" = u.id
        WHERE u.role = $2
        GROUP BY u.id, u."createdAt"
        ORDER BY active_count ASC, u."createdAt" ASC
