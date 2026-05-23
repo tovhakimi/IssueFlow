@@ -2,6 +2,7 @@
 - Planned phases and architecture with claude.ai before opening Claude Code
 - Wrote CLAUDE.md manually based on requirements doc and README.md
 - Created document-phase skill for automated documentation
+- Installed [claude-model-router-hook](https://github.com/tzachbon/claude-model-router-hook) plugin for automatic model tier routing — classifies each prompt by complexity and switches between Haiku (simple tasks), Sonnet (implementation), and Opus (architecture/deep analysis) with zero API calls. This ensures cost-efficient model usage: simple git ops don't burn Opus tokens, while complex refactors get the reasoning power they need.
 
 ## Phase Log
 - Phase 1 (document-phase Skill): created `.claude/skills/document-phase/SKILL.md` — interactive skill that logs phase prompts, generated files, and manual changes to prompts.md and Instructions.md after each build phase
@@ -20,3 +21,14 @@
 - @Mention mechanism: fixed 4 bugs — (1) case-insensitive username lookup via ILike, (2) added `mentionedUsers: [{ id, username, fullName }]` to all comment responses, (3) `findMentionsByUser` now returns full comments instead of raw mention rows, (4) added @ManyToOne/@OneToMany relations on Mention↔Comment and Mention→User with eager loading.
 - Auto-assignment & workload: fixed 4 bugs — (1) workload query missing LEFT JOIN on tickets, (2) response field `activeTickets` → `openTicketCount`, (3) workload sort by `openTicketCount` instead of user `createdAt`, (4) auto-assign audit log guard now requires `assigneeId` to be truthy before logging.
 - Graphify: ran `/graphify` to generate a codebase knowledge graph (`graphify-out/`) for architectural visualization and analysis — 422 nodes, 735 edges, 18 communities across 71 files.
+
+## Model Usage
+Throughout this project, model selection was handled automatically by the [claude-model-router-hook](https://github.com/tzachbon/claude-model-router-hook) plugin. Instead of manually switching models, the plugin classifies each prompt by complexity and routes to the appropriate tier:
+
+| Tier | Used For |
+|------|----------|
+| **Haiku** | Git operations, file lookups, formatting, quick reads |
+| **Sonnet** | Feature implementation, debugging, code writing, test authoring |
+| **Opus** | Architecture planning, deep multi-file analysis, complex refactors |
+
+Sub-agents spawned during a session also follow these tier rules — simple search agents use Haiku, implementation agents use Sonnet, and only architectural reasoning gets Opus. This keeps costs down without sacrificing quality where it matters.

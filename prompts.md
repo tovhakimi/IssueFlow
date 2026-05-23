@@ -616,3 +616,31 @@ Ran `/graphify` to generate a knowledge graph of the entire IssueFlow codebase.
 | CommentsService | 15 |
 
 **Generated files:** `graphify-out/` directory (gitignored)
+
+---
+
+## Model Router Plugin
+
+**Prompt:**
+Install the [claude-model-router-hook](https://github.com/tzachbon/claude-model-router-hook) plugin for automatic model tier routing. This classifies prompts by complexity and switches between Haiku, Sonnet, and Opus automatically — no manual model changes needed.
+
+**Why this matters:**
+The assessment requires mentioning which model is used. Rather than manually toggling between models, this plugin handles it automatically based on prompt complexity:
+- **Haiku** — git ops, renames, formatting, file searches (cheap, fast)
+- **Sonnet** — feature work, debugging, code writing (balanced)
+- **Opus** — architecture decisions, deep analysis, complex refactors (full reasoning)
+
+The plugin uses keyword and pattern matching (zero API calls) to classify each prompt. It also injects sub-agent routing rules so spawned agents pick the right tier automatically.
+
+**Installation:**
+```bash
+claude plugin marketplace add tzachbon/claude-model-router-hook
+claude plugin install claude-model-router-hook@claude-model-router-hook
+```
+
+**Configuration:** `~/.claude/model-router.json` — supports `"warn"` (recommend only) or `"autoswitch"` (change model automatically). Prefix any prompt with `~` to bypass classification.
+
+**What changed:**
+- Removed old manual `SessionStart` hook from `~/.claude/settings.json`
+- Deleted `~/.claude/hooks/session-init.sh` (replaced by plugin's version)
+- Plugin registered in settings under `enabledPlugins`

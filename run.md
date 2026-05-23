@@ -49,6 +49,10 @@
 | `JWT_SECRET` | `issueflow-secret` | JWT signing secret (change in production) |
 | `UPLOAD_PATH` | `./uploads` | Directory for attachment files |
 
+## Model Routing
+
+This project uses the [claude-model-router-hook](https://github.com/tzachbon/claude-model-router-hook) plugin to automatically select the appropriate Claude model tier (Haiku / Sonnet / Opus) based on prompt complexity. No manual model switching is required — the plugin classifies each prompt and routes accordingly. Configuration lives in `~/.claude/model-router.json`.
+
 ## Viewing the Knowledge Graph
 
 The codebase was analyzed with Graphify, producing an interactive knowledge graph in `graphify-out/`.
