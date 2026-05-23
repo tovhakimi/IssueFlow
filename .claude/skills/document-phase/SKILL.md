@@ -18,9 +18,7 @@ Ask the user for each of the following, one at a time:
 2. **Phase name** — e.g. `Project Skeleton & Auth`
 3. **Prompt used** — the exact prompt that was given to Claude for this phase
    (multi-line is fine; user signals done with a blank line or explicit "done")
-4. **Manual changes made after Claude's output** — anything the user edited by
-   hand; `none` is a valid answer
-5. **Is this the final phase?** — `yes` or `no`
+4. **Is this the final phase?** — `yes` or `no`
 
 ### 2. Auto-detect changed files
 
@@ -52,9 +50,6 @@ Append the following block (replace placeholders):
 - <file1>
 - <file2>
 ...
-
-**Manual Changes:**
-<manual changes or "None">
 ```
 
 Blank line before and after the block when appending to existing content.
