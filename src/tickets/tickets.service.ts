@@ -339,6 +339,10 @@ export class TicketsService {
 
     for (const ticket of overdueTickets) {
       const nextPriority = ESCALATION[ticket.priority];
+
+      // Already CRITICAL and already flagged — nothing to do (idempotent)
+      if (!nextPriority && ticket.isOverdue) continue;
+
       if (nextPriority) {
         ticket.priority = nextPriority;
       }

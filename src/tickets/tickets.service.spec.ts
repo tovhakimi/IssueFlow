@@ -31,7 +31,7 @@ const mockRepo = () => ({
   save: jest.fn(entity => Promise.resolve({ ...entity, id: 1, version: 1 })),
   findOne: jest.fn(),
   find: jest.fn(),
-  findByIds: jest.fn(),
+  findBy: jest.fn(),
   softDelete: jest.fn(),
   restore: jest.fn(),
   createQueryBuilder: jest.fn(),
@@ -95,7 +95,7 @@ describe('TicketsService', () => {
       const ticket = mockTicket({ status: TicketStatus.IN_REVIEW });
       ticketRepo.findOne.mockResolvedValue(ticket);
       depRepo.find.mockResolvedValue([{ id: 1, ticketId: 1, blockedById: 2 }] as any);
-      ticketRepo.findByIds.mockResolvedValue([
+      ticketRepo.findBy.mockResolvedValue([
         mockTicket({ id: 2, status: TicketStatus.IN_PROGRESS }),
       ]);
 
@@ -184,6 +184,85 @@ describe('TicketsService', () => {
 
       const result = await service.update(1, { priority: TicketPriority.HIGH }, 1);
       expect(result.isOverdue).toBe(false);
+    });
+  });
+
+  describe('escalateOverdueTickets', () => {
+    const mockQueryBuilder = (tickets: Ticket[]) => {
+      const qb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(tickets),
+      };
+      ticketRepo.createQueryBuilder.mockReturnValue(qb as any);
+    };
+
+    it('skips CRITICAL+isOverdue tickets (idempotent — no save, no audit log)', async () => {
+      const ticket = mockTicket({
+        priority: TicketPriority.CRITICAL,
+        isOverdue: true,
+        dueDate: new Date('2020-01-01'),
+        status: TicketStatus.IN_PROGRESS,
+      });
+      mockQueryBuilder([ticket]);
+
+      await service.escalateOverdueTickets();
+
+      expect(ticketRepo.save).not.toHaveBeenCalled();
+      expect(auditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('escalates LOW to MEDIUM for overdue tickets', async () => {
+      const ticket = mockTicket({
+        priority: TicketPriority.LOW,
+        isOverdue: false,
+        dueDate: new Date('2020-01-01'),
+        status: TicketStatus.TODO,
+      });
+      mockQueryBuilder([ticket]);
+      ticketRepo.save.mockImplementation(async (t: any) => t);
+
+      await service.escalateOverdueTickets();
+
+      expect(ticketRepo.save).toHaveBeenCalledTimes(1);
+      expect(ticket.priority).toBe(TicketPriority.MEDIUM);
+      expect(ticket.isOverdue).toBe(false);
+    });
+
+    it('sets isOverdue=true when escalating HIGH to CRITICAL', async () => {
+      const ticket = mockTicket({
+        priority: TicketPriority.HIGH,
+        isOverdue: false,
+        dueDate: new Date('2020-01-01'),
+        status: TicketStatus.TODO,
+      });
+      mockQueryBuilder([ticket]);
+      ticketRepo.save.mockImplementation(async (t: any) => t);
+
+      await service.escalateOverdueTickets();
+
+      expect(ticket.priority).toBe(TicketPriority.CRITICAL);
+      expect(ticket.isOverdue).toBe(true);
+      expect(auditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ actor: 'SYSTEM', action: 'ESCALATE' }),
+      );
+    });
+
+    it('sets isOverdue=true for CRITICAL ticket that was not yet flagged', async () => {
+      const ticket = mockTicket({
+        priority: TicketPriority.CRITICAL,
+        isOverdue: false,
+        dueDate: new Date('2020-01-01'),
+        status: TicketStatus.IN_PROGRESS,
+      });
+      mockQueryBuilder([ticket]);
+      ticketRepo.save.mockImplementation(async (t: any) => t);
+
+      await service.escalateOverdueTickets();
+
+      expect(ticket.priority).toBe(TicketPriority.CRITICAL);
+      expect(ticket.isOverdue).toBe(true);
+      expect(ticketRepo.save).toHaveBeenCalledTimes(1);
     });
   });
 });
