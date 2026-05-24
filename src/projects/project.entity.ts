@@ -17,7 +17,7 @@ export class Project {
   @Column({ nullable: true })
   description: string;
 
-  @Column()
+  @Column({ nullable: true })
   ownerId: number;
 
   @CreateDateColumn()

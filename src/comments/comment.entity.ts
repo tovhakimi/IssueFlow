@@ -17,7 +17,7 @@ export class Comment {
   @Column()
   ticketId: number;
 
-  @Column()
+  @Column({ nullable: true })
   authorId: number;
 
   @Column('text')

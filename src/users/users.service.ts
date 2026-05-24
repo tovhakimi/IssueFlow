@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -7,12 +7,21 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditActor } from '../audit-log/audit-log.entity';
+import { Ticket } from '../tickets/ticket.entity';
+import { Comment } from '../comments/comment.entity';
+import { Project } from '../projects/project.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly repo: Repository<User>,
+    @InjectRepository(Ticket)
+    private readonly ticketRepo: Repository<Ticket>,
+    @InjectRepository(Comment)
+    private readonly commentRepo: Repository<Comment>,
+    @InjectRepository(Project)
+    private readonly projectRepo: Repository<Project>,
     private readonly auditLog: AuditLogService,
   ) {}
 
@@ -74,8 +83,13 @@ export class UsersService {
   }
 
   async delete(id: number, performedBy: number): Promise<void> {
+    if (id === performedBy) throw new ForbiddenException('Cannot delete yourself');
     const user = await this.repo.findOne({ where: { id } });
     if (!user) throw new NotFoundException(`User ${id} not found`);
+    // Nullify dangling references before hard delete
+    await this.ticketRepo.update({ assigneeId: id }, { assigneeId: null });
+    await this.commentRepo.update({ authorId: id }, { authorId: null });
+    await this.projectRepo.update({ ownerId: id }, { ownerId: null });
     await this.repo.delete(id);
     await this.auditLog.log({
       actor: AuditActor.USER,
