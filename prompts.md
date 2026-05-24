@@ -1,4 +1,32 @@
+# IssueFlow — Prompts & Build Log
+
+## Table of Contents
+
+| Phase | Name                          | Plan                                    |
+|-------|-------------------------------|-----------------------------------------|
+| 0     | Architecture & Planning       | [plan-phase-0.md](plans/plan-phase-0.md)|
+| 1     | document-phase Skill          | [plan-phase-1.md](plans/plan-phase-1.md)|
+| 2     | Foundation + Users + Auth     | [plan-phase-2.md](plans/plan-phase-2.md)|
+| 3     | Projects + Tickets Core       | [plan-phase-3.md](plans/plan-phase-3.md)|
+| 4     | Comments + Mentions + Audit   | [plan-phase-4.md](plans/plan-phase-4.md)|
+| 5     | Deps + Attachments + CSV      | [plan-phase-5.md](plans/plan-phase-5.md)|
+| 6     | Scheduler                     | [plan-phase-6.md](plans/plan-phase-6.md)|
+| 7     | Testing                       | [plan-phase-7.md](plans/plan-phase-7.md)|
+| 8     | Documentation + Dockerize     | [plan-phase-8.md](plans/plan-phase-8.md)|
+
+| Section         | Jump To                          |
+|-----------------|----------------------------------|
+| Graphify        | [Graphify](#graphify-codebase-knowledge-graph) |
+| Model Router    | [Model Router](#model-router-plugin)           |
+| Dockerize       | [Dockerize](#dockerize)                        |
+| Security Review | [Security Review](#security-review)            |
+| Performance Review | [Performance Review](#performance-review)   |
+
+---
+
 ## Phase 0: Planning & Architecture
+
+[Phase plan -> plans/plan-phase-0.md](plans/plan-phase-0.md)
 
 **Prompt:**
 Read the attached assessment PDF carefully. Before writing any code, I want to plan the architecture with you. Identify the domain modules, their dependencies, the data model, and any tricky business rules we need to handle carefully. Produce an architecture summary: modules, entities, key API contracts, and a phase breakdown for implementation.
@@ -36,6 +64,8 @@ Read the attached assessment PDF carefully. Before writing any code, I want to p
 
 ## Phase 1: document-phase Skill
 
+[Phase plan -> plans/plan-phase-1.md](plans/plan-phase-1.md)
+
 **Prompt:**
 Create a skill that documents completed Claude Code build phases for the IssueFlow project.
 After each phase, the user invokes the skill to log what happened into structured files,
@@ -65,6 +95,8 @@ Outputs:
 ---
 
 ## Phase 2: Foundation + Users + Auth
+
+[Phase plan -> plans/plan-phase-2.md](plans/plan-phase-2.md)
 
 **Prompt:**
 Start the implementation. Phase 2 covers the project foundation and the first two modules.
@@ -133,6 +165,8 @@ passwordHash, createdAt
 ---
 
 ## Phase 3: Projects + Tickets Core
+
+[Phase plan -> plans/plan-phase-3.md](plans/plan-phase-3.md)
 
 **Prompt:**
 Phase 3. AuditLog must come first (other modules depend on it). Then Projects, then Tickets.
@@ -395,6 +429,8 @@ SYSTEM audit log, stores `null` assigneeId).
 
 ## Phase 4: Comments + Mentions + Audit Log
 
+[Phase plan -> plans/plan-phase-4.md](plans/plan-phase-4.md)
+
 **Prompt:**
 Phase 4. Comments with optimistic locking, @mention parsing, and full AuditLog wiring.
 
@@ -538,6 +574,8 @@ to include `mentionedUsers`.
 
 ## Phase 5: Dependencies + Attachments + Export/Import
 
+[Phase plan -> plans/plan-phase-5.md](plans/plan-phase-5.md)
+
 **Prompt:**
 Phase 5. Three sub-features added to TicketsModule: ticket dependencies, file attachments, CSV bulk ops.
 
@@ -641,6 +679,8 @@ Fix the dependency API to match the spec contract. Three issues:
 
 ## Phase 6: Scheduler (Auto-Escalation)
 
+[Phase plan -> plans/plan-phase-6.md](plans/plan-phase-6.md)
+
 **Prompt:**
 Phase 6. Add the hourly auto-escalation cron job as a standalone SchedulerModule.
 
@@ -674,6 +714,8 @@ re-entry for each escalated ticket.
 ---
 
 ## Phase 7: Tests
+
+[Phase plan -> plans/plan-phase-7.md](plans/plan-phase-7.md)
 
 **Prompt:**
 Phase 7. Write unit tests and e2e tests covering all critical business rules.
@@ -719,7 +761,9 @@ escalation.service.spec.ts:
 
 ---
 
-## Phase 8: Documentation
+## Phase 8: Documentation + Dockerize
+
+[Phase plan -> plans/plan-phase-8.md](plans/plan-phase-8.md)
 
 **Prompt:**
 Review all the md files and make sure everything is documented. Also create a run.md file
@@ -1057,3 +1101,190 @@ Dockerize the IssueFlow app so the entire project runs with a single docker comp
 
 **Files created:** Dockerfile, .dockerignore
 **Files changed:** compose.yml, run.md
+
+---
+
+## Security Review
+
+**Prompt:**
+Perform a security audit of the IssueFlow codebase. Focus on: raw SQL queries (SQL injection risk), JWT handling, file upload validation, missing authorization checks, and OWASP Top 10 concerns. Review every raw query, every public endpoint, and every file handling path.
+
+**Findings:**
+
+### 1. Raw SQL — SQL Injection Risk Assessment
+
+Three methods use raw SQL with parameterized queries (`$1`, `$2`):
+
+| Method                          | File                           | Parameterized? | Verdict |
+|---------------------------------|--------------------------------|----------------|---------|
+| `autoAssign(projectId)`         | tickets.service.ts:187         | Yes (`$1`, `$2`)| Safe    |
+| `getWorkload(projectId)`        | projects.service.ts:94         | Yes (`$1`)      | Safe    |
+| `escalateOverdueTickets()`      | tickets.service.ts:373         | QueryBuilder    | Safe    |
+
+All raw queries use positional parameters — no string interpolation of user input. **No SQL injection risk found.**
+
+### 2. JWT Security
+
+| Check                                | Status | Detail |
+|---------------------------------------|--------|--------|
+| Token expiry enforced                  | Pass   | `ignoreExpiration: false` in JwtStrategy |
+| Deny-list checked on every request    | Pass   | `isTokenDenied()` called in `validate()` |
+| Secret from environment variable       | Pass   | Falls back to `'issueflow-secret'` if unset |
+| JTI (unique token ID) in payload      | Pass   | `randomUUID()` for each login |
+| Deny-list is in-memory                 | Note   | Resets on server restart — logged-out tokens become valid again. Acceptable for assignment scope; production would use Redis. |
+
+**Finding (Low):** The fallback JWT secret `'issueflow-secret'` is hardcoded. In production, the app should refuse to start without `JWT_SECRET` set. For assignment scope, this is acceptable.
+
+### 3. File Upload Security
+
+| Check                            | Status | Detail |
+|----------------------------------|--------|--------|
+| File size limit                   | Pass   | 10MB max via `limits.fileSize` |
+| MIME type whitelist               | Pass   | Only png, jpeg, pdf, text/plain |
+| Filename sanitization             | Pass   | Generated filename: `Date.now()-random.ext` |
+| Path traversal prevention         | Pass   | multer's diskStorage handles destination |
+| Content-type from client          | Note   | `file.mimetype` is client-provided; a malicious client could spoof it. Server-side magic byte validation would be stronger but is out of scope. |
+
+### 4. Authorization Gaps
+
+| Endpoint                         | Guard     | Finding |
+|----------------------------------|-----------|---------|
+| POST /users (create)             | @Public() | Intentional — registration endpoint |
+| GET /audit-logs                  | JWT only  | Any authenticated user can read all audit logs. Consider ADMIN-only for sensitive audit data. |
+| PATCH /tickets/:id               | JWT only  | Any authenticated user can update any ticket. No ownership check. |
+| DELETE /tickets/:id              | JWT only  | Any authenticated user can soft-delete any ticket. No ownership check. |
+| PATCH /comments/:id              | JWT only  | Any authenticated user can edit any comment. No author check. |
+| DELETE /comments/:id             | JWT only  | Any authenticated user can delete any comment. No author check. |
+
+**Assessment:** The spec does not require ownership-based authorization (only role-based ADMIN/DEVELOPER). The current implementation matches the spec. In a production app, you'd add ownership checks (e.g., only the comment author or an ADMIN can edit/delete).
+
+### 5. Other OWASP Concerns
+
+| Category                    | Status | Detail |
+|-----------------------------|--------|--------|
+| Mass assignment              | Mitigated | `whitelist: true` in ValidationPipe strips unknown fields |
+| XSS via comment content     | N/A    | REST API returns JSON, not HTML. No rendering. |
+| CORS                        | Note   | No CORS configuration. Default NestJS blocks cross-origin. |
+| Rate limiting                | Missing | No rate limiter on login endpoint. Brute-force possible. |
+| Password hash algorithm      | Pass   | bcrypt with salt rounds = 10 |
+| Sensitive data in responses  | Pass   | `passwordHash` stripped from all user responses |
+
+**Summary:** No critical vulnerabilities found. The codebase is secure for assignment scope. The main production-readiness gaps are: Redis-backed JWT deny-list, ownership-based authorization, rate limiting on auth endpoints, and server-side MIME type validation.
+
+---
+
+## Performance Review
+
+**Prompt:**
+Identify performance issues in the IssueFlow codebase: N+1 queries, missing database indexes, unbounded result sets, and inefficient patterns. Document findings without implementing fixes.
+
+**Findings:**
+
+### 1. N+1 Query Risks
+
+| Location                          | Issue                                                | Severity |
+|-----------------------------------|------------------------------------------------------|----------|
+| `syncMentions()` comments.service.ts:182 | Loops through usernames and calls `findByUsername()` one-by-one. 5 mentions = 5 queries. | Medium |
+| `importCsv()` tickets.service.ts:346 | Calls `create()` per row in a loop. 100 rows = 100+ INSERT + audit log queries. | Medium |
+| `escalateOverdueTickets()` tickets.service.ts:387 | Saves each ticket individually in a for-loop. With 1000 overdue tickets, that's 1000 UPDATE + 1000 INSERT (audit). | Medium |
+| `getDependencies()` tickets.service.ts:254 | Two queries: find deps, then find tickets by IDs. Acceptable (only 2 queries). | Low |
+
+**Recommended fix (not implemented):** Batch operations — `findByUsername` could accept an array, `importCsv` could use `save([...])` for bulk insert, and `escalateOverdueTickets` could batch-update with a single query.
+
+### 2. Missing Database Indexes
+
+| Table    | Column(s)              | Used In                        | Impact |
+|----------|------------------------|--------------------------------|--------|
+| tickets  | `assigneeId`           | autoAssign JOIN, workload JOIN | High — raw SQL JOINs on this column |
+| tickets  | `projectId`            | findAll filter, CSV export     | High — frequently filtered |
+| tickets  | `dueDate, status`      | escalation cron query          | Medium — scanned every hour |
+| tickets  | `deletedAt`            | soft-delete filtering          | Medium — TypeORM adds implicit filters |
+| comments | `ticketId`             | findAll, findOne               | Medium |
+| mentions | `commentId`            | syncMentions, findMentionsByUser| Medium |
+| mentions | `userId`               | findMentionsByUser             | Medium |
+
+TypeORM creates indexes automatically for `@PrimaryGeneratedColumn()` and `@Column({ unique: true })` columns. Foreign key columns and filter columns do not get automatic indexes. For assignment scope with small datasets, this is acceptable. In production, adding `@Index()` decorators to the columns above would significantly improve query performance.
+
+### 3. Unbounded Result Sets
+
+| Endpoint                  | Issue                                               |
+|---------------------------|-----------------------------------------------------|
+| GET /tickets              | No pagination — returns all tickets for a project   |
+| GET /audit-logs           | No pagination — returns all matching audit entries  |
+| GET /tickets/deleted      | No pagination — returns all soft-deleted tickets    |
+| GET /projects             | No pagination — returns all projects                |
+| GET /tickets/export       | No limit — exports all tickets in project to CSV    |
+
+**Assessment:** The spec does not require pagination on these endpoints. For assignment scope with small datasets, this is fine. In production, you'd add `?page=&limit=` query params with a default limit of 50.
+
+### 4. Other Performance Observations
+
+- **Eager-loaded mentions on Comment entity** — every comment query loads all mentions automatically. For list endpoints returning many comments, this could multiply queries. With `eager: true`, TypeORM issues a JOIN for each comment. For small datasets this is fine; for production, switch to explicit `relations: ['mentions']` only when needed.
+
+- **In-memory JWT deny-list** — `Set<string>` grows unbounded. Long-running servers accumulate entries for every logout. No TTL cleanup. With JWT expiry at 1h, entries older than 1h are useless but never removed.
+
+- **Workload query scans all developers** — not scoped to the project's team. Returns every DEVELOPER in the system with their ticket count. For large user bases, this would be slow.
+
+**Summary:** No critical performance issues for assignment scope. The main production-readiness improvements would be: database indexes on FK/filter columns, pagination on list endpoints, batch operations for bulk imports/escalation, and TTL cleanup for the JWT deny-list.
+
+---
+
+## Requirements Validation (`/validate-requirements`)
+
+**Prompt:**
+Run `/validate-requirements` — the custom skill that reads the TDP 2026 requirements PDF, dynamically generates curl-based tests for every requirement, executes them against the live app at `localhost:3000`, and reports pass/fail results with coverage stats.
+
+**Execution:** The skill extracted the full PDF text via `pdfminer`, identified 85 requirements across 14 sections, categorized them as api-testable (78), code-verifiable (4), or skip (3), then generated and executed 78 curl tests sequentially.
+
+**Results:**
+
+```
+============================================
+  IssueFlow Requirements Validation Summary
+============================================
+| Section  | Description              | Pass  | Fail  |
+| -------- | ------------------------ | ----- | ----- |
+| 2.1      | User Management          | 13    | 0     |
+| 2.2      | Authentication           | 6     | 0     |
+| 2.3      | Project Management       | 4     | 0     |
+| 2.4      | Ticket Management        | 9     | 0     |
+| 2.5      | Comment Management       | 5     | 0     |
+| 3.1      | Audit Log                | 4     | 0     |
+| 3.2      | Dependencies             | 5     | 0     |
+| 3.3      | Attachments              | 4     | 0     |
+| 3.4      | Export & Import          | 2     | 0     |
+| 3.5      | Soft Delete & Restore    | 8     | 0     |
+| 3.6      | @Mentions                | 5     | 0     |
+| 3.7      | Auto-Escalation          | 5     | 0     |
+| 3.8      | Auto-Assignment          | 4     | 0     |
+| 4.x      | Additional Checks        | 4     | 0     |
+| -------- | ------------------------ | ----- | ----- |
+| TOTAL    |                          | 78    | 0     |
+============================================
+
+Coverage: 78 of 85 PDF requirements tested, 4 code-verified, 3 skipped (not automatable)
+```
+
+**Failures:** None.
+
+**Skipped (not automatable):**
+- "Submit your solution via HackerRank" (Section 5)
+- "Be prepared to explain your code" (Section 5)
+- "Use the Java/JS/TS skeletons project provided" (Section 5)
+
+**Key tests verified:**
+- Full status lifecycle (TODO -> IN_PROGRESS -> IN_REVIEW -> DONE)
+- Backward status transitions rejected (400)
+- DONE ticket update guard (403)
+- Optimistic locking on tickets and comments (409)
+- Cross-project dependency constraint (400)
+- DONE blocked by unresolved dependency (400)
+- File type validation (rejected text/html)
+- CSV export/import round-trip
+- Soft-delete and restore with RBAC (ADMIN-only)
+- Case-insensitive @mention matching
+- Mention re-evaluation on comment update
+- Auto-assignment audit log (actor=SYSTEM)
+- Workload endpoint (openTicketCount, excludes ADMIN users)
+- Manual priority reset clears isOverdue
+- User deletion: ADMIN-only, self-delete prevention, reference cleanup
