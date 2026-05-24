@@ -217,6 +217,20 @@ triggered the ticket creation was being erased from the audit trail.
 **Requirement (CLAUDE.md rule 13):** Every state-changing action writes to AuditLog with
 actor=USER|SYSTEM. Auto-assignment should be a separate SYSTEM entry alongside the USER CREATE.
 
+**Bug invocation prompt:**
+```bash
+# Create a ticket without assigneeId (triggers auto-assignment)
+curl -X POST http://localhost:3000/tickets \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Auto-assign test", "projectId": 1}'
+
+# Check audit log — only one entry exists with actor=SYSTEM, no USER CREATE entry
+curl http://localhost:3000/audit-logs?entityType=Ticket&action=CREATE \
+  -H "Authorization: Bearer $TOKEN"
+# Bug: the CREATE entry has actor=SYSTEM instead of USER; no separate AUTO_ASSIGN entry
+```
+
 **Prompt:**
 Each auto-assignment is recorded in the Audit Log with actor = SYSTEM, action = AUTO_ASSIGN.
 Change to it respectively. The CREATE entry must always have actor=USER and performedBy=userId.
@@ -237,6 +251,16 @@ only when auto-assignment fires.
 The spec defines ticket types as BUG, FEATURE, TECHNICAL. The initial implementation used TASK
 instead of TECHNICAL, which would cause validation failures on import and mismatches with the API
 contract.
+
+**Bug invocation prompt:**
+```bash
+# Try to create a ticket with type TECHNICAL (from the spec)
+curl -X POST http://localhost:3000/tickets \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Bug report", "projectId": 1, "type": "TECHNICAL"}'
+# Bug: 400 Bad Request — validation rejects "TECHNICAL" because the enum only has "TASK"
+```
 
 **Prompt:**
 Look at @src/tickets/ticket.entity.ts, change the TicketType to -> BUG, FEATURE, TECHNICAL
@@ -277,6 +301,23 @@ that would cause runtime failures or incorrect API responses:
    `undefined` but the audit log still recorded a bogus `AUTO_ASSIGN` entry with
    `changes: { assigneeId: undefined }`.
 
+**Bug invocation prompt:**
+```bash
+# Bug 1+2+3: Workload endpoint returns wrong data
+curl http://localhost:3000/projects/1/workload \
+  -H "Authorization: Bearer $TOKEN"
+# Bug: returns [{ userId, username, activeTickets: 0 }] for everyone (missing JOIN),
+# wrong field name (activeTickets instead of openTicketCount), and wrong sort order
+
+# Bug 4: Create ticket in a project with no developers
+curl -X POST http://localhost:3000/tickets \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Orphan ticket", "projectId": 99}'
+# Bug: AuditLog gets a SYSTEM/AUTO_ASSIGN entry with changes: { assigneeId: undefined }
+# even though no developer was assigned
+```
+
 **Prompt:**
 Fix 4 bugs in auto-assignment and workload:
 1. Add `LEFT JOIN tickets t ON t."assigneeId" = u.id` to the workload query
@@ -307,6 +348,20 @@ The `autoAssign()` query selected from ALL developers in the system, regardless 
 they had any connection to the project. A developer who never worked on a project could be
 auto-assigned to a ticket in it — violating the principle that auto-assignment should pick
 from the project's team.
+
+**Bug invocation prompt:**
+```bash
+# Create two projects and two developers
+# Developer A has tickets in project 1 only
+# Developer B has tickets in project 2 only
+# Create a ticket in project 1 without assigneeId
+curl -X POST http://localhost:3000/tickets \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "New ticket", "projectId": 1}'
+# Bug: Developer B (who has never worked on project 1) could be auto-assigned
+# because the query searched ALL developers system-wide, not just project-linked ones
+```
 
 **Prompt:**
 Scope auto-assignment to only pick from developers already linked to the project (i.e.,
@@ -406,6 +461,27 @@ Manual audit of the @mention feature (section 3.6) against the spec found four i
 
 4. **`Mention` entity had no relations**: Only `commentId` and `userId` as plain `@Column()` — no
    `@ManyToOne` relations to Comment or User, making joins and eager loading impossible.
+
+**Bug invocation prompt:**
+```bash
+# Bug 1: Mention a user with mixed case — mention silently fails
+curl -X POST http://localhost:3000/tickets/1/comments \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Hey @JohnDoe please review this"}'
+# Bug: user "JohnDoe" exists in DB but parseMentions lowercases to "johndoe",
+# and findByUsername does case-sensitive lookup — no match, no mention created
+
+# Bug 2: Comment response missing mentionedUsers field
+curl http://localhost:3000/tickets/1/comments/1 \
+  -H "Authorization: Bearer $TOKEN"
+# Bug: returns { id, ticketId, content, ... } with no mentionedUsers array
+
+# Bug 3: Mentions endpoint returns wrong data
+curl http://localhost:3000/users/1/mentions \
+  -H "Authorization: Bearer $TOKEN"
+# Bug: returns raw Mention rows [{ id, commentId, userId }] instead of Comment objects
+```
 
 **Prompt:**
 Fix the @mention mechanism to match the spec. Currently there are 4 bugs:
@@ -517,6 +593,33 @@ violations:
    returned raw `TicketDependency` join rows (only id/ticketId/blockedById — not useful to callers).
 4. **Deprecated TypeORM API**: `findByIds()` used in `assertNoBlockers()` is deprecated in TypeORM
    0.3.20; replaced with `findBy({ id: In([...]) })`.
+
+**Bug invocation prompt:**
+```bash
+# Bug 1: POST with spec-compliant field name fails
+curl -X POST http://localhost:3000/tickets/1/dependencies \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"blockedBy": 2}'
+# Bug: 400 — DTO expects "blockedById" not "blockedBy" (whitelist strips it)
+
+# Bug 2: DELETE with spec-compliant param name fails
+curl -X DELETE http://localhost:3000/tickets/1/dependencies/2 \
+  -H "Authorization: Bearer $TOKEN"
+# Bug: route param named :blockedById doesn't match :blockerId from spec
+
+# Bug 3: GET returns raw join rows instead of ticket objects
+curl http://localhost:3000/tickets/1/dependencies \
+  -H "Authorization: Bearer $TOKEN"
+# Bug: returns [{ id: 1, ticketId: 1, blockedById: 2 }] instead of full Ticket objects
+```
+
+**Prompt:**
+Fix the dependency API to match the spec contract. Three issues:
+1. DTO field should be `blockedBy` not `blockedById` (spec says `{ "blockedBy": 42 }`)
+2. DELETE route param should be `:blockerId` not `:blockedById` (spec: `/dependencies/{blockerId}`)
+3. GET should return full Ticket objects, not raw TicketDependency join rows
+4. Replace deprecated `findByIds()` with `findBy({ id: In([...]) })`
 
 **Prompts used in diagnosis:**
 - `GET /tickets/{ticketId}/dependencies returns all tickets this ticket is blocked by` — spec text
@@ -680,3 +783,74 @@ claude plugin install claude-model-router-hook@claude-model-router-hook
 - Removed old manual `SessionStart` hook from `~/.claude/settings.json`
 - Deleted `~/.claude/hooks/session-init.sh` (replaced by plugin's version)
 - Plugin registered in settings under `enabledPlugins`
+
+---
+
+### Fix 7: Optimistic Locking — Version Bypass & Race Condition
+
+**Problem identified:**
+Two bugs in optimistic locking undermined concurrent update protection on both Tickets and Comments:
+
+1. **`version` was optional — locking bypass**: In `UpdateTicketDto` and `UpdateCommentDto`,
+   `version` was marked `@IsOptional()`. The service check was
+   `if (dto.version !== undefined && dto.version !== ticket.version)` — if a client omitted
+   `version`, the check was skipped entirely. Two users could update the same entity without
+   any conflict detection.
+
+2. **True concurrent requests got 500 instead of 409**: Even when `version` was sent correctly,
+   a race window existed: Request A and B both read version=1, both pass the manual check,
+   Request A saves (version bumps to 2), Request B saves — TypeORM throws
+   `OptimisticLockVersionMismatchError` which was not caught, bubbling up as 500 Internal Server
+   Error instead of 409 Conflict.
+
+**Bug invocation prompt:**
+```bash
+# Bug 1: Omit version field — bypasses optimistic locking entirely
+curl -X PATCH http://localhost:3000/tickets/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Sneaky update"}'
+# Bug: succeeds with 200 — no conflict detection at all, version field was optional
+
+# Bug 2: Send two concurrent requests with the same version
+# Terminal 1:
+curl -X PATCH http://localhost:3000/tickets/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Update A", "version": 1}'
+# Terminal 2 (at the same time):
+curl -X PATCH http://localhost:3000/tickets/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Update B", "version": 1}'
+# Bug: second request returns 500 Internal Server Error instead of 409 Conflict
+# because OptimisticLockVersionMismatchError from TypeORM was not caught
+```
+
+**Prompt:**
+Fix optimistic locking on Tickets and Comments. Two bugs:
+1. `version` is `@IsOptional()` in both UpdateTicketDto and UpdateCommentDto — make it
+   `@IsNotEmpty()` so clients must always send it (400 if omitted).
+2. The `.save()` call doesn't catch `OptimisticLockVersionMismatchError` from TypeORM —
+   wrap it in try/catch and re-throw as `ConflictException(409)` for true race conditions.
+
+**Fix applied:**
+1. **DTOs**: Replaced `@IsOptional()` with `@IsNotEmpty()` on `version` in both
+   `UpdateTicketDto` and `UpdateCommentDto`. Removed the `?` optional marker.
+2. **Services**: Imported `OptimisticLockVersionMismatchError` from TypeORM. Wrapped the
+   `.save()` call in `tickets.service.ts:update()` and `comments.service.ts:update()` with
+   try/catch — catches the TypeORM error and re-throws as `ConflictException`.
+3. **Tests**: Added `version` to all `update()` calls in `tickets.service.spec.ts` (6 calls)
+   and `tickets.performance.spec.ts` (1 call) that were missing it.
+
+**Files changed:**
+- src/tickets/dto/update-ticket.dto.ts — `version` made required
+- src/comments/dto/update-comment.dto.ts — `version` made required
+- src/tickets/tickets.service.ts — catch `OptimisticLockVersionMismatchError` on save
+- src/comments/comments.service.ts — catch `OptimisticLockVersionMismatchError` on save
+- src/tickets/tickets.service.spec.ts — added `version` to 6 update calls
+- src/tickets/tickets.performance.spec.ts — added `version` to 1 update call
+
+**Tests:**
+- All 31 tests passing (6 suites)
+- Build: clean
