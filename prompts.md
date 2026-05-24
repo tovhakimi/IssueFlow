@@ -300,6 +300,42 @@ Fix 4 bugs in auto-assignment and workload:
 - All 31 tests passing (25 unit + 6 e2e)
 - Build: clean (npx tsc --noEmit — no errors)
 
+### Fix 6: Auto-Assignment Scoped to Project Developers
+
+**Problem identified:**
+The `autoAssign()` query selected from ALL developers in the system, regardless of whether
+they had any connection to the project. A developer who never worked on a project could be
+auto-assigned to a ticket in it — violating the principle that auto-assignment should pick
+from the project's team.
+
+**Prompt:**
+Scope auto-assignment to only pick from developers already linked to the project (i.e.,
+assigned to at least one non-deleted ticket in that project). If no developer is linked,
+leave `assigneeId` as `null` — no error.
+
+**Fix applied:**
+Added an `AND u.id IN (...)` subquery to the `autoAssign()` raw SQL query that restricts
+candidates to developers with at least one non-deleted ticket assignment in the same project:
+```sql
+AND u.id IN (
+  SELECT DISTINCT t2."assigneeId"
+  FROM tickets t2
+  WHERE t2."projectId" = $1
+    AND t2."assigneeId" IS NOT NULL
+    AND t2."deletedAt" IS NULL
+)
+```
+
+The `create()` method already handled `undefined` from `autoAssign()` correctly (skips
+SYSTEM audit log, stores `null` assigneeId).
+
+**Files changed:**
+- src/tickets/tickets.service.ts (autoAssign query: added project-scoped subquery filter)
+
+**Tests:**
+- All 31 tests passing (30 unit + 1 e2e suite)
+- Build: clean
+
 ---
 
 ## Phase 4: Comments + Mentions + Audit Log
