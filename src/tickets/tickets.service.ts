@@ -174,7 +174,7 @@ export class TicketsService {
   // ─── Auto-assignment ─────────────────────────────────────────────────────────
 
   private async autoAssign(projectId: number): Promise<number | undefined> {
-    // Find DEVELOPER with fewest non-DONE tickets in this project; tie-break by createdAt
+    // Find DEVELOPER already assigned to a ticket in this project, with fewest non-DONE tickets; tie-break by createdAt
     const rows = await this.ticketRepo.manager.query(
       `SELECT u.id, u."createdAt",
               COUNT(t.id) FILTER (
@@ -185,6 +185,13 @@ export class TicketsService {
        FROM users u
        LEFT JOIN tickets t ON t."assigneeId" = u.id
        WHERE u.role = $2
+         AND u.id IN (
+           SELECT DISTINCT t2."assigneeId"
+           FROM tickets t2
+           WHERE t2."projectId" = $1
+             AND t2."assigneeId" IS NOT NULL
+             AND t2."deletedAt" IS NULL
+         )
        GROUP BY u.id, u."createdAt"
        ORDER BY active_count ASC, u."createdAt" ASC
        LIMIT 1`,
