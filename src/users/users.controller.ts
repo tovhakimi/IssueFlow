@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Param,
   ParseIntPipe,
@@ -11,6 +12,7 @@ import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Public } from '../common/decorators/public.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('users')
 export class UsersController {
@@ -39,5 +41,12 @@ export class UsersController {
   @HttpCode(200)
   update(@Param('userId', ParseIntPipe) id: number, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
+  }
+
+  @Delete(':userId')
+  @HttpCode(200)
+  async delete(@Param('userId', ParseIntPipe) id: number, @CurrentUser() user: any) {
+    await this.usersService.delete(id, user.id);
+    return { message: 'User deleted' };
   }
 }

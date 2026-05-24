@@ -5,12 +5,15 @@ import * as bcrypt from 'bcrypt';
 import { User } from './user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditActor } from '../audit-log/audit-log.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly repo: Repository<User>,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   async create(dto: CreateUserDto): Promise<Omit<User, 'passwordHash'>> {
@@ -54,6 +57,19 @@ export class UsersService {
 
     const saved = await this.repo.save(user);
     return this.sanitize(saved);
+  }
+
+  async delete(id: number, performedBy: number): Promise<void> {
+    const user = await this.repo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException(`User ${id} not found`);
+    await this.repo.delete(id);
+    await this.auditLog.log({
+      actor: AuditActor.USER,
+      action: 'DELETE_USER',
+      entityType: 'User',
+      entityId: id,
+      performedBy,
+    });
   }
 
   async getMentions(userId: number, page = 1, limit = 20) {
