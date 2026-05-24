@@ -39,8 +39,8 @@ export class UsersController {
 
   @Post('update/:userId')
   @HttpCode(200)
-  update(@Param('userId', ParseIntPipe) id: number, @Body() dto: UpdateUserDto) {
-    return this.usersService.update(id, dto);
+  update(@Param('userId', ParseIntPipe) id: number, @Body() dto: UpdateUserDto, @CurrentUser() user: any) {
+    return this.usersService.update(id, dto, user.id);
   }
 
   @Delete(':userId')

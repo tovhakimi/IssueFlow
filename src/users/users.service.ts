@@ -25,6 +25,13 @@ export class UsersService {
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = this.repo.create({ ...dto, passwordHash });
     const saved = await this.repo.save(user);
+    await this.auditLog.log({
+      actor: AuditActor.USER,
+      action: 'CREATE_USER',
+      entityType: 'User',
+      entityId: saved.id,
+      performedBy: saved.id,
+    });
     return this.sanitize(saved);
   }
 
@@ -43,7 +50,7 @@ export class UsersService {
     return this.repo.findOne({ where: { username: ILike(username) } });
   }
 
-  async update(id: number, dto: UpdateUserDto): Promise<Omit<User, 'passwordHash'>> {
+  async update(id: number, dto: UpdateUserDto, performedBy: number): Promise<Omit<User, 'passwordHash'>> {
     const user = await this.repo.findOne({ where: { id } });
     if (!user) throw new NotFoundException(`User ${id} not found`);
 
@@ -56,6 +63,13 @@ export class UsersService {
     if (dto.role) user.role = dto.role;
 
     const saved = await this.repo.save(user);
+    await this.auditLog.log({
+      actor: AuditActor.USER,
+      action: 'UPDATE_USER',
+      entityType: 'User',
+      entityId: id,
+      performedBy,
+    });
     return this.sanitize(saved);
   }
 
