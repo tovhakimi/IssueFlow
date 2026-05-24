@@ -971,3 +971,68 @@ Log attachment add/remove actions. Add audit logging to `addAttachment()` with a
 **Tests:**
 - All 31 tests passing (6 suites)
 - Build: clean
+
+### Fix 11: DELETE /users/:userId — Missing Authorization, Self-Delete, and Dangling References
+
+**Problem identified:**
+The `DELETE /users/:userId` endpoint had three security and data integrity issues:
+
+1. **No authorization guard**: Any authenticated user (DEVELOPER, PM, etc.) could delete any user.
+   The endpoint should be ADMIN-only, matching the pattern used for soft-delete restore endpoints.
+
+2. **No self-delete prevention**: An admin could delete themselves, leaving an orphaned active JWT
+   with no backing user record. Subsequent requests using that token would fail unpredictably.
+
+3. **No cleanup of dangling references**: Hard-deleting a user left orphaned foreign keys in
+   `tickets.assigneeId`, `comments.authorId`, and `projects.ownerId`. Depending on DB constraints,
+   this could cause constraint violations or return stale user IDs that no longer resolve.
+
+**Bug invocation prompt:**
+```bash
+# Bug 1: Non-admin user can delete any user
+curl -X DELETE http://localhost:3000/users/2 \
+  -H "Authorization: Bearer $DEVELOPER_TOKEN"
+# Bug: succeeds with 200 — no role check at all
+
+# Bug 2: Admin deletes themselves
+curl -X DELETE http://localhost:3000/users/1 \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+# Bug: succeeds with 200 — admin's own JWT is now orphaned
+
+# Bug 3: Dangling references after deletion
+curl http://localhost:3000/tickets?projectId=1 \
+  -H "Authorization: Bearer $TOKEN"
+# Bug: tickets still show assigneeId: 2 (deleted user) — stale reference
+```
+
+**Prompt:**
+Fix `DELETE /users/:userId` with three changes:
+1. Add `@UseGuards(RolesGuard)` + `@Roles(UserRole.ADMIN)` to the controller method
+2. In the service, check `id === performedBy` and throw `ForbiddenException('Cannot delete yourself')`
+3. Before hard delete, nullify dangling references: `ticketRepo.update({ assigneeId: id }, { assigneeId: null })`,
+   `commentRepo.update({ authorId: id }, { authorId: null })`, `projectRepo.update({ ownerId: id }, { ownerId: null })`
+4. Make `authorId` (Comment) and `ownerId` (Project) nullable in their entities to support the nullification
+
+**Fix applied:**
+1. **Controller**: Added `@UseGuards(RolesGuard)` + `@Roles(UserRole.ADMIN)` to `delete()` method,
+   matching the existing pattern in `tickets.controller.ts` and `projects.controller.ts`.
+2. **Service**: Added self-delete guard at the top of `delete()` — throws `ForbiddenException` if
+   `id === performedBy`. Injected `Ticket`, `Comment`, and `Project` repositories. Before
+   `this.repo.delete(id)`, nullifies all three FK references.
+3. **Entities**: Changed `@Column()` to `@Column({ nullable: true })` on `Comment.authorId` and
+   `Project.ownerId`. `Ticket.assigneeId` was already nullable.
+4. **Module**: Added `Ticket`, `Comment`, `Project` to `TypeOrmModule.forFeature()` in `UsersModule`.
+
+Note: `Mention` entity has `onDelete: 'CASCADE'` on the User relation, so mentions are
+auto-cleaned by the database when the user is deleted — no manual cleanup needed.
+
+**Files changed:**
+- src/users/users.controller.ts — ADMIN guard on delete
+- src/users/users.service.ts — self-delete check, injected repos, nullify references
+- src/users/users.module.ts — added Ticket, Comment, Project to TypeORM imports
+- src/comments/comment.entity.ts — authorId made nullable
+- src/projects/project.entity.ts — ownerId made nullable
+
+**Tests:**
+- All 31 tests passing (6 suites)
+- Build: clean
