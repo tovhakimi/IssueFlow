@@ -1,34 +1,12 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
-
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
-
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
 # IssueFlow – Ticket Management Backend Platform
 
 ## Overview
+
 IssueFlow is a backend service designed to handle a lightweight project and issue tracking platform.
 The system manages users, projects, tickets (issues), comments on tickets, audit logs, ticket dependencies, attachments, and bulk ticket import/export.
 
 ## Functionality
+
 The system provides the following APIs:
 
 - **Users API**: Manages user identities behind ticket assignments and comments.
@@ -45,10 +23,78 @@ The system provides the following APIs:
 - **Auto-Assignment**: Tickets without an explicit assignee are automatically assigned to the least-loaded DEVELOPER in the project.
 
 ## Technical Aspects
-The system is built using NestJS (TypeScript), leveraging its robust framework for creating RESTful APIs. Data persistence is managed using PostgreSQL via TypeORM.
 
-## Homework Task
-Candidates are expected to design and implement the above APIs, adhering to RESTful principles, including input validation, proper error handling, and relevant tests.
+The system is built using NestJS (TypeScript), leveraging its robust framework for creating RESTful APIs. Data persistence is managed using PostgreSQL via TypeORM. The project is fully dockerized — `compose.yml` runs both the PostgreSQL database and the NestJS application.
+
+## Getting Started
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) (for the database, or to run the full stack)
+- [Node.js](https://nodejs.org/) 18+ (only needed for local/manual setup)
+
+### Quick Start (Docker)
+
+Run the entire stack with a single command — no local Node.js required:
+
+```bash
+docker compose up --build
+```
+
+This starts both PostgreSQL and the NestJS API. The API is available at `http://localhost:3000`.
+
+To stop: `docker compose down`
+
+### Manual Setup
+
+1. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+2. **Start the database**
+   ```bash
+   docker compose up -d
+   ```
+   This starts the `db` service (PostgreSQL on port 5432).
+   Credentials: user=`issueflow`, password=`issueflow`, database=`issueflow`.
+
+3. **Build the project**
+   ```bash
+   npm run build
+   ```
+
+4. **Start the API server**
+   ```bash
+   npm run start:prod
+   ```
+   For development with live reload:
+   ```bash
+   npm run start:dev
+   ```
+   The API listens on `http://localhost:3000`.
+
+### Running Tests
+
+```bash
+# unit tests
+npm run test
+
+# e2e tests
+npm run test:e2e
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
+| `DB_USER` | `issueflow` | PostgreSQL username |
+| `DB_PASS` | `issueflow` | PostgreSQL password |
+| `DB_NAME` | `issueflow` | PostgreSQL database |
+| `JWT_SECRET` | `issueflow-secret` | JWT signing secret (change in production) |
+| `UPLOAD_PATH` | `./uploads` | Directory for attachment files |
 
 ---
 
@@ -70,7 +116,7 @@ Candidates are expected to design and implement the above APIs, adhering to REST
 |-------------------------|------------------|-------------------------------------------------------|-----------------|---------------|
 | Login (obtain JWT)      | POST /auth/login | `{ "username": "jdoe", "password": "secret" }`       | 200 OK          | `{ "accessToken": "<jwt>", "tokenType": "Bearer", "expiresIn": 3600 }` |
 | Logout (invalidate token) | POST /auth/logout |                                                     | 200 OK          | |
-| Get current user        | GET /auth/me     |    
+| Get current user        | GET /auth/me     |
 
 ---
 
@@ -175,64 +221,6 @@ Tickets and projects support **soft delete** only — deleted records are hidden
 
 ---
 
-## Jump Start
-The project is fully dockerized — `compose.yml` runs both the PostgreSQL DB and the NestJS app. A single `docker compose up --build` starts the entire stack.
-
-Document your exact setup, build, and run steps in `run.md` (install dependencies, start the database, build the project, run the application, and run the tests).
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Running the app (Docker — recommended)
-
-```bash
-# Start the full stack (DB + app) — no local Node.js needed
-$ docker compose up --build
-```
-
-The API will be available at `http://localhost:3000`.
-
-## Running the app (local dev)
-
-```bash
-# Install dependencies
-$ npm install
-
-# Start only the database
-$ docker compose up db -d
-
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
-```
-
-## Test
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## AI & Agents
-
-We encourage you to use AI during the process. Document how you used the agent and add all relevant files (skills, instructions, plan, etc.).
-
-Add the main and relevant prompts that show your interaction with the agents in a `prompts.md` file.
-
----
-
 ## License
 
-Nest is [MIT licensed](LICENSE).
+IssueFlow is [MIT licensed](LICENSE).
