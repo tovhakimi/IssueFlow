@@ -176,7 +176,7 @@ Tickets and projects support **soft delete** only — deleted records are hidden
 ---
 
 ## Jump Start
-For your convenience, `compose.yml` includes a PostgreSQL DB and the app is already configured to connect to it.
+The project is fully dockerized — `compose.yml` runs both the PostgreSQL DB and the NestJS app. A single `docker compose up --build` starts the entire stack.
 
 Document your exact setup, build, and run steps in `run.md` (install dependencies, start the database, build the project, run the application, and run the tests).
 
@@ -184,15 +184,24 @@ Document your exact setup, build, and run steps in `run.md` (install dependencie
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
-## Installation
+## Running the app (Docker — recommended)
 
 ```bash
-$ npm install
+# Start the full stack (DB + app) — no local Node.js needed
+$ docker compose up --build
 ```
 
-## Running the app
+The API will be available at `http://localhost:3000`.
+
+## Running the app (local dev)
 
 ```bash
+# Install dependencies
+$ npm install
+
+# Start only the database
+$ docker compose up db -d
+
 # development
 $ npm run start
 

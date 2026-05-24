@@ -1036,3 +1036,24 @@ auto-cleaned by the database when the user is deleted — no manual cleanup need
 **Tests:**
 - All 31 tests passing (6 suites)
 - Build: clean
+
+---
+
+## Dockerize
+
+**Prompt:**
+Dockerize the IssueFlow app so the entire project runs with a single docker compose up command — no local Node.js needed.
+
+**What changed:**
+1. **Dockerfile** (new): Multi-stage build — `node:20-alpine` build stage compiles TypeScript, production stage copies only `dist/` and production `node_modules`.
+2. **.dockerignore** (new): Excludes `node_modules`, `dist`, `.git`, `uploads`, `graphify-out`, `.claude`.
+3. **compose.yml**: Added `app` service (builds from Dockerfile, exposes port 3000, depends on healthy `db`). Added `healthcheck` to `db` service (`pg_isready`).
+4. **run.md**: Added "Quick Start (Docker)" section at the top.
+
+**Key decisions:**
+- `DB_HOST: db` — containers use Docker's internal DNS, not `localhost`
+- `depends_on` with `condition: service_healthy` — app waits for Postgres to be ready, not just started
+- Multi-stage build — keeps production image small (no devDependencies, no source)
+
+**Files created:** Dockerfile, .dockerignore
+**Files changed:** compose.yml, run.md

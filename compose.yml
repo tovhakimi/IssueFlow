@@ -1,4 +1,21 @@
 services:
+  app:
+    build: .
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: issueflow
+      DB_PASS: issueflow
+      DB_NAME: issueflow
+      JWT_SECRET: issueflow-secret
+      UPLOAD_PATH: /app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
   db:
     image: postgres
     restart: always
@@ -6,6 +23,11 @@ services:
       POSTGRES_USER: issueflow
       POSTGRES_PASSWORD: issueflow
       POSTGRES_DB: issueflow
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U issueflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
   #  volumes:
    #   - type: bind
    #     source: ./data

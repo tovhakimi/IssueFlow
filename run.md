@@ -1,5 +1,21 @@
 # How to Run IssueFlow
 
+## Quick Start (Docker)
+
+Run the entire stack with a single command — no local Node.js required:
+
+```
+docker compose up --build
+```
+
+This starts both PostgreSQL and the NestJS API. The API is available at **http://localhost:3000**.
+
+To stop: `docker compose down`
+
+---
+
+## Manual Setup
+
 1. **Install dependencies**
    ```
    npm install

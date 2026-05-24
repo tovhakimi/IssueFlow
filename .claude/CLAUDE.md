@@ -6,7 +6,7 @@ Assignment: TDP 2026 IssueFlow ticket management platform.
 
 ## Stack
 - NestJS 11, TypeScript 5
-- TypeORM with PostgreSQL (compose.yml already configured — do not modify it)
+- TypeORM with PostgreSQL (compose.yml runs both DB and app)
 - JWT auth via @nestjs/jwt + @nestjs/passport
 - class-validator + class-transformer for all DTOs
 - @nestjs/schedule for cron jobs (auto-escalation)
