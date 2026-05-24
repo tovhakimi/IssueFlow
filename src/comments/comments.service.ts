@@ -4,7 +4,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { OptimisticLockVersionMismatchError, Repository } from 'typeorm';
 import { Comment } from './comment.entity';
 import { Mention } from './mention.entity';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -71,7 +71,14 @@ export class CommentsService {
     }
 
     comment.content = dto.content;
-    await this.commentRepo.save(comment);
+    try {
+      await this.commentRepo.save(comment);
+    } catch (err) {
+      if (err instanceof OptimisticLockVersionMismatchError) {
+        throw new ConflictException('Version mismatch — comment was modified concurrently');
+      }
+      throw err;
+    }
 
     await this.syncMentions(commentId, dto.content);
 

@@ -71,7 +71,7 @@ describe('TicketsService', () => {
       ticketRepo.findOne.mockResolvedValue(ticket);
       ticketRepo.save.mockResolvedValue({ ...ticket, status: TicketStatus.IN_PROGRESS });
 
-      const result = await service.update(1, { status: TicketStatus.IN_PROGRESS }, 1);
+      const result = await service.update(1, { status: TicketStatus.IN_PROGRESS, version: 1 }, 1);
       expect(result.status).toBe(TicketStatus.IN_PROGRESS);
     });
 
@@ -79,7 +79,7 @@ describe('TicketsService', () => {
       const ticket = mockTicket({ status: TicketStatus.IN_REVIEW });
       ticketRepo.findOne.mockResolvedValue(ticket);
 
-      await expect(service.update(1, { status: TicketStatus.TODO }, 1)).rejects.toThrow(
+      await expect(service.update(1, { status: TicketStatus.TODO, version: 1 }, 1)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -88,7 +88,7 @@ describe('TicketsService', () => {
       const ticket = mockTicket({ status: TicketStatus.DONE });
       ticketRepo.findOne.mockResolvedValue(ticket);
 
-      await expect(service.update(1, { title: 'changed' }, 1)).rejects.toThrow(ForbiddenException);
+      await expect(service.update(1, { title: 'changed', version: 1 }, 1)).rejects.toThrow(ForbiddenException);
     });
 
     it('blocks transition to DONE when there are unresolved blockers', async () => {
@@ -99,7 +99,7 @@ describe('TicketsService', () => {
         mockTicket({ id: 2, status: TicketStatus.IN_PROGRESS }),
       ]);
 
-      await expect(service.update(1, { status: TicketStatus.DONE }, 1)).rejects.toThrow(
+      await expect(service.update(1, { status: TicketStatus.DONE, version: 1 }, 1)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -172,7 +172,7 @@ describe('TicketsService', () => {
   describe('DONE guard', () => {
     it('prevents any field update on a DONE ticket', async () => {
       ticketRepo.findOne.mockResolvedValue(mockTicket({ status: TicketStatus.DONE }));
-      await expect(service.update(1, { description: 'x' }, 1)).rejects.toThrow(ForbiddenException);
+      await expect(service.update(1, { description: 'x', version: 1 }, 1)).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -182,7 +182,7 @@ describe('TicketsService', () => {
       ticketRepo.findOne.mockResolvedValue(ticket);
       ticketRepo.save.mockImplementation(async (t: any) => ({ ...t } as any));
 
-      const result = await service.update(1, { priority: TicketPriority.HIGH }, 1);
+      const result = await service.update(1, { priority: TicketPriority.HIGH, version: 1 }, 1);
       expect(result.isOverdue).toBe(false);
     });
   });

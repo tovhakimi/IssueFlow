@@ -1,6 +1,7 @@
 import {
   IsDateString,
   IsEnum,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -36,8 +37,8 @@ export class UpdateTicketDto {
   @IsDateString()
   dueDate?: string;
 
-  // Must be provided for optimistic locking check
-  @IsOptional()
+  // Required for optimistic locking — prevents concurrent update conflicts
+  @IsNotEmpty()
   @IsNumber()
-  version?: number;
+  version: number;
 }

@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, OptimisticLockVersionMismatchError, Repository } from 'typeorm';
 import { Ticket, TicketStatus, TicketPriority } from './ticket.entity';
 import { TicketDependency } from './ticket-dependency.entity';
 import { Attachment } from './attachment.entity';
@@ -122,7 +122,16 @@ export class TicketsService {
     }
 
     Object.assign(ticket, changes);
-    const saved = await this.ticketRepo.save(ticket);
+
+    let saved: Ticket;
+    try {
+      saved = await this.ticketRepo.save(ticket);
+    } catch (err) {
+      if (err instanceof OptimisticLockVersionMismatchError) {
+        throw new ConflictException('Version mismatch — ticket was modified concurrently');
+      }
+      throw err;
+    }
 
     await this.auditLog.log({
       actor: AuditActor.USER,

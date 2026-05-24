@@ -122,7 +122,7 @@ describe('TicketsService — performance', () => {
     depRepo.find.mockResolvedValue([]);
 
     const start = Date.now();
-    await service.update(1, { status: TicketStatus.DONE }, 1);
+    await service.update(1, { status: TicketStatus.DONE, version: 1 }, 1);
     expect(Date.now() - start).toBeLessThan(5);
   });
 

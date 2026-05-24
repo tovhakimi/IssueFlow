@@ -5,8 +5,8 @@ export class UpdateCommentDto {
   @IsString()
   content: string;
 
-  // Required for optimistic locking
-  @IsOptional()
+  // Required for optimistic locking — prevents concurrent update conflicts
+  @IsNotEmpty()
   @IsNumber()
-  version?: number;
+  version: number;
 }
