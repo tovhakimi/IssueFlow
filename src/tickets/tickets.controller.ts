@@ -121,8 +121,9 @@ export class TicketsController {
   addDependency(
     @Param('ticketId', ParseIntPipe) id: number,
     @Body() dto: CreateDependencyDto,
+    @CurrentUser() user: any,
   ) {
-    return this.ticketsService.addDependency(id, dto);
+    return this.ticketsService.addDependency(id, dto, user.id);
   }
 
   @Delete(':ticketId/dependencies/:blockerId')
@@ -130,8 +131,9 @@ export class TicketsController {
   removeDependency(
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @Param('blockerId', ParseIntPipe) blockerId: number,
+    @CurrentUser() user: any,
   ) {
-    return this.ticketsService.removeDependency(ticketId, blockerId);
+    return this.ticketsService.removeDependency(ticketId, blockerId, user.id);
   }
 
   // ─── Attachments ─────────────────────────────────────────────────────────────

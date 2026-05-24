@@ -212,7 +212,7 @@ export class TicketsService {
 
   // ─── Dependencies ────────────────────────────────────────────────────────────
 
-  async addDependency(ticketId: number, dto: CreateDependencyDto): Promise<TicketDependency> {
+  async addDependency(ticketId: number, dto: CreateDependencyDto, performedBy: number): Promise<TicketDependency> {
     const ticket = await this.findOne(ticketId);
     const blocker = await this.findOne(dto.blockedBy);
 
@@ -226,13 +226,28 @@ export class TicketsService {
     if (existing) throw new ConflictException('Dependency already exists');
 
     const dep = this.depRepo.create({ ticketId, blockedById: dto.blockedBy });
-    return this.depRepo.save(dep);
+    const saved = await this.depRepo.save(dep);
+    await this.auditLog.log({
+      actor: AuditActor.USER,
+      action: 'ADD_DEPENDENCY',
+      entityType: 'Ticket',
+      entityId: ticketId,
+      performedBy,
+    });
+    return saved;
   }
 
-  async removeDependency(ticketId: number, blockedById: number): Promise<{ message: string }> {
+  async removeDependency(ticketId: number, blockedById: number, performedBy: number): Promise<{ message: string }> {
     const dep = await this.depRepo.findOne({ where: { ticketId, blockedById } });
     if (!dep) throw new NotFoundException('Dependency not found');
     await this.depRepo.remove(dep);
+    await this.auditLog.log({
+      actor: AuditActor.USER,
+      action: 'REMOVE_DEPENDENCY',
+      entityType: 'Ticket',
+      entityId: ticketId,
+      performedBy,
+    });
     return { message: 'Dependency removed' };
   }
 
