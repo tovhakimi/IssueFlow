@@ -854,3 +854,120 @@ Fix optimistic locking on Tickets and Comments. Two bugs:
 **Tests:**
 - All 31 tests passing (6 suites)
 - Build: clean
+
+### Fix 8: Missing Audit Logging for User Create & Update
+
+**Problem identified:**
+The assignment requires every state-changing action to be recorded in the audit log (CLAUDE.md rule 13). Only `DELETE_USER` was logged. `CREATE_USER` and `UPDATE_USER` were completely missing — creating or updating a user left no audit trail.
+
+**Bug invocation prompt:**
+```bash
+# Create a user
+curl -X POST http://localhost:3000/users \
+  -H "Content-Type: application/json" \
+  -d '{"username": "newuser", "email": "new@test.com", "password": "pass123", "fullName": "New User", "role": "DEVELOPER"}'
+
+# Update a user
+curl -X POST http://localhost:3000/users/update/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"fullName": "Updated Name"}'
+
+# Check audit log — no CREATE_USER or UPDATE_USER entries exist
+curl http://localhost:3000/audit-logs?entityType=User \
+  -H "Authorization: Bearer $TOKEN"
+# Bug: only DELETE_USER entries appear; CREATE_USER and UPDATE_USER are missing
+```
+
+**Prompt:**
+Add audit logging for user create and update. CREATE_USER should use `performedBy: saved.id` (endpoint is @Public, no authenticated user). UPDATE_USER should accept `performedBy` from `@CurrentUser()` in the controller.
+
+**Fix applied:**
+1. `create()`: Added `auditLog.log()` call after save with `action: 'CREATE_USER'`, `performedBy: saved.id`.
+2. `update()`: Added `performedBy: number` parameter and `auditLog.log()` call with `action: 'UPDATE_USER'`.
+3. Controller: Added `@CurrentUser() user: any` to `update()` handler, passing `user.id` to the service.
+
+**Files changed:**
+- src/users/users.service.ts
+- src/users/users.controller.ts
+
+**Tests:**
+- All 31 tests passing (6 suites)
+- Build: clean
+
+### Fix 9: Missing Audit Logging for Ticket Dependency Add/Remove
+
+**Problem identified:**
+Adding or removing ticket dependencies are state-changing actions that were not recorded in the audit log. A developer could add/remove blockers with no traceability.
+
+**Bug invocation prompt:**
+```bash
+# Add a dependency
+curl -X POST http://localhost:3000/tickets/1/dependencies \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"blockedBy": 2}'
+
+# Remove a dependency
+curl -X DELETE http://localhost:3000/tickets/1/dependencies/2 \
+  -H "Authorization: Bearer $TOKEN"
+
+# Check audit log — no dependency-related entries
+curl http://localhost:3000/audit-logs?entityType=Ticket \
+  -H "Authorization: Bearer $TOKEN"
+# Bug: no ADD_DEPENDENCY or REMOVE_DEPENDENCY entries exist
+```
+
+**Prompt:**
+Log ticket dependency add/remove actions. Add audit logging to `addDependency()` with action `ADD_DEPENDENCY` and `removeDependency()` with action `REMOVE_DEPENDENCY`. Pass `performedBy` from `@CurrentUser()` in the controller.
+
+**Fix applied:**
+1. `addDependency()`: Added `performedBy: number` parameter and audit log call with `action: 'ADD_DEPENDENCY'`, `entityType: 'Ticket'`, `entityId: ticketId`.
+2. `removeDependency()`: Added `performedBy: number` parameter and audit log call with `action: 'REMOVE_DEPENDENCY'`.
+3. Controller: Added `@CurrentUser() user: any` to both handlers, passing `user.id`.
+
+**Files changed:**
+- src/tickets/tickets.service.ts
+- src/tickets/tickets.controller.ts
+
+**Tests:**
+- All 31 tests passing (6 suites)
+- Build: clean
+
+### Fix 10: Missing Audit Logging for Attachment Add/Remove
+
+**Problem identified:**
+Adding or removing file attachments are state-changing actions that were not recorded in the audit log. Files could be attached to or removed from tickets with no traceability.
+
+**Bug invocation prompt:**
+```bash
+# Upload an attachment
+curl -X POST http://localhost:3000/tickets/1/attachments \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@./test.png"
+
+# Delete an attachment
+curl -X DELETE http://localhost:3000/tickets/1/attachments/1 \
+  -H "Authorization: Bearer $TOKEN"
+
+# Check audit log — no attachment-related entries
+curl http://localhost:3000/audit-logs?entityType=Ticket \
+  -H "Authorization: Bearer $TOKEN"
+# Bug: no ADD_ATTACHMENT or REMOVE_ATTACHMENT entries exist
+```
+
+**Prompt:**
+Log attachment add/remove actions. Add audit logging to `addAttachment()` with action `ADD_ATTACHMENT` and `deleteAttachment()` with action `REMOVE_ATTACHMENT`. Pass `performedBy` from `@CurrentUser()` in the controller.
+
+**Fix applied:**
+1. `addAttachment()`: Added `performedBy: number` parameter and audit log call with `action: 'ADD_ATTACHMENT'`, `entityType: 'Ticket'`, `entityId: ticketId`.
+2. `deleteAttachment()`: Added `performedBy: number` parameter and audit log call with `action: 'REMOVE_ATTACHMENT'`.
+3. Controller: Added `@CurrentUser() user: any` to both handlers, passing `user.id`.
+
+**Files changed:**
+- src/tickets/tickets.service.ts
+- src/tickets/tickets.controller.ts
+
+**Tests:**
+- All 31 tests passing (6 suites)
+- Build: clean
