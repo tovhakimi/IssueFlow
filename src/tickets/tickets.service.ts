@@ -275,7 +275,7 @@ export class TicketsService {
 
   // ─── Attachments ─────────────────────────────────────────────────────────────
 
-  async addAttachment(ticketId: number, file: Express.Multer.File): Promise<Attachment> {
+  async addAttachment(ticketId: number, file: Express.Multer.File, performedBy: number): Promise<Attachment> {
     await this.findOne(ticketId);
     const attachment = this.attachmentRepo.create({
       ticketId,
@@ -285,7 +285,15 @@ export class TicketsService {
       path: file.path,
       size: file.size,
     });
-    return this.attachmentRepo.save(attachment);
+    const saved = await this.attachmentRepo.save(attachment);
+    await this.auditLog.log({
+      actor: AuditActor.USER,
+      action: 'ADD_ATTACHMENT',
+      entityType: 'Ticket',
+      entityId: ticketId,
+      performedBy,
+    });
+    return saved;
   }
 
   async getAttachments(ticketId: number): Promise<Attachment[]> {
@@ -293,10 +301,17 @@ export class TicketsService {
     return this.attachmentRepo.find({ where: { ticketId } });
   }
 
-  async deleteAttachment(ticketId: number, attachmentId: number): Promise<{ message: string }> {
+  async deleteAttachment(ticketId: number, attachmentId: number, performedBy: number): Promise<{ message: string }> {
     const att = await this.attachmentRepo.findOne({ where: { id: attachmentId, ticketId } });
     if (!att) throw new NotFoundException('Attachment not found');
     await this.attachmentRepo.remove(att);
+    await this.auditLog.log({
+      actor: AuditActor.USER,
+      action: 'REMOVE_ATTACHMENT',
+      entityType: 'Ticket',
+      entityId: ticketId,
+      performedBy,
+    });
     return { message: 'Attachment deleted' };
   }
 

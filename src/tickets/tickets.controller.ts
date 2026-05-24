@@ -168,8 +168,9 @@ export class TicketsController {
   addAttachment(
     @Param('ticketId', ParseIntPipe) id: number,
     @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: any,
   ) {
-    return this.ticketsService.addAttachment(id, file);
+    return this.ticketsService.addAttachment(id, file, user.id);
   }
 
   @Delete(':ticketId/attachments/:attachmentId')
@@ -177,7 +178,8 @@ export class TicketsController {
   deleteAttachment(
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @Param('attachmentId', ParseIntPipe) attachmentId: number,
+    @CurrentUser() user: any,
   ) {
-    return this.ticketsService.deleteAttachment(ticketId, attachmentId);
+    return this.ticketsService.deleteAttachment(ticketId, attachmentId, user.id);
   }
 }
